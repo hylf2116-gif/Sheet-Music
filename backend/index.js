@@ -75,6 +75,19 @@ io.on('connection', (socket) => {
     if (rooms[roomId]) rooms[roomId].shapes = [];
     socket.to(roomId).emit('clear');
   });
+    socket.on('delete-shape', ({ roomId, id }) => {
+    if (rooms[roomId]) {
+      rooms[roomId].shapes = rooms[roomId].shapes.filter(s => s.id !== id);
+    }
+    socket.to(roomId).emit('delete-shape', id);
+  });
+
+  socket.on('update-shape', ({ roomId, id, changes }) => {
+    if (rooms[roomId]) {
+      rooms[roomId].shapes = rooms[roomId].shapes.map(s => s.id === id ? { ...s, ...changes } : s);
+    }
+    socket.to(roomId).emit('update-shape', { id, changes });
+  });
 });
 
 server.listen(3001, () => console.log('Server running on port 3001'));
