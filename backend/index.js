@@ -28,41 +28,63 @@ const io = new Server(server, {
   cors: { origin: 'http://localhost:3000', methods: ['GET', 'POST'] }
 });
 
+// rooms[id] = { pdfUrl, shapes, hostId, raisedHands: string[] }
 const rooms = {};
 
-// Create a new room
 app.post('/create-room', (req, res) => {
   const roomId = uuidv4();
-  rooms[roomId] = { shapes: [], pdfUrl: req.body.pdfUrl };
+  rooms[roomId] = { shapes: [], pdfUrl: req.body.pdfUrl, hostId: null, raisedHands: [] };
   res.json({ roomId });
 });
 
-// Upload a PDF
 app.post('/upload', upload.single('pdf'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
   res.json({ url: fileUrl, filename: req.file.filename });
 });
 
-// Get room info
 app.get('/room/:roomId', (req, res) => {
   const room = rooms[req.params.roomId];
   if (!room) return res.status(404).json({ error: 'Room not found' });
-  res.json(room);
+  res.json({ pdfUrl: room.pdfUrl });
 });
 
 io.on('connection', (socket) => {
+  let currentRoom = null;
+
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
-    if (rooms[roomId]) {
-      socket.emit('load-shapes', rooms[roomId].shapes);
-    }
+    currentRoom = roomId;
+    const room = rooms[roomId];
+    if (!room) return;
+    // First socket to join becomes the host.
+    if (!room.hostId) room.hostId = socket.id;
+    socket.emit('load-shapes', room.shapes);
+    socket.emit('room-info', {
+      isHost: socket.id === room.hostId,
+      raisedHands: room.raisedHands,
+    });
   });
 
   socket.on('new-shape', ({ roomId, shape }) => {
-    if (!rooms[roomId]) return;
-    rooms[roomId].shapes.push(shape);
+    const room = rooms[roomId];
+    if (!room) return;
+    room.shapes.push(shape); // shape includes ownerId set by client
     socket.to(roomId).emit('new-shape', shape);
+  });
+
+  socket.on('delete-shape', ({ roomId, id }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    const shape = room.shapes.find(s => s.id === id);
+    if (shape) {
+      const isHost = socket.id === room.hostId;
+      const isOwner = !shape.ownerId || shape.ownerId === socket.id;
+      if (!isHost && !isOwner) return; // enforce ownership
+      room.shapes = room.shapes.filter(s => s.id !== id);
+    }
+    // Broadcast regardless (shape may not exist if pixel-erase already removed it).
+    socket.to(roomId).emit('delete-shape', id);
   });
 
   socket.on('undo', (roomId) => {
@@ -75,18 +97,42 @@ io.on('connection', (socket) => {
     if (rooms[roomId]) rooms[roomId].shapes = [];
     socket.to(roomId).emit('clear');
   });
-    socket.on('delete-shape', ({ roomId, id }) => {
-    if (rooms[roomId]) {
-      rooms[roomId].shapes = rooms[roomId].shapes.filter(s => s.id !== id);
-    }
-    socket.to(roomId).emit('delete-shape', id);
-  });
 
   socket.on('update-shape', ({ roomId, id, changes }) => {
-    if (rooms[roomId]) {
-      rooms[roomId].shapes = rooms[roomId].shapes.map(s => s.id === id ? { ...s, ...changes } : s);
-    }
+    const room = rooms[roomId];
+    if (!room) return;
+    room.shapes = room.shapes.map(s => s.id === id ? { ...s, ...changes } : s);
     socket.to(roomId).emit('update-shape', { id, changes });
+  });
+
+  // Laser pointer — no storage, pure broadcast.
+  socket.on('laser-move', ({ roomId, x, y, page }) => {
+    socket.to(roomId).emit('laser-move', { socketId: socket.id, x, y, page });
+  });
+  socket.on('laser-stop', (roomId) => {
+    socket.to(roomId).emit('laser-stop', { socketId: socket.id });
+  });
+
+  // Raise / lower hand — broadcast to everyone in room including sender.
+  socket.on('raise-hand', (roomId) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    if (!room.raisedHands.includes(socket.id)) room.raisedHands.push(socket.id);
+    io.to(roomId).emit('raise-hand', { socketId: socket.id });
+  });
+  socket.on('lower-hand', (roomId) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    room.raisedHands = room.raisedHands.filter(id => id !== socket.id);
+    io.to(roomId).emit('lower-hand', { socketId: socket.id });
+  });
+
+  socket.on('disconnect', () => {
+    if (currentRoom && rooms[currentRoom]) {
+      rooms[currentRoom].raisedHands = rooms[currentRoom].raisedHands.filter(id => id !== socket.id);
+      socket.to(currentRoom).emit('laser-stop', { socketId: socket.id });
+      socket.to(currentRoom).emit('lower-hand', { socketId: socket.id });
+    }
   });
 });
 
