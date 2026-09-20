@@ -5,11 +5,43 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+const DATA_DIR = path.join(__dirname, 'data');
+const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
+
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+
+function loadRooms() {
+  try {
+    if (fs.existsSync(ROOMS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf8'));
+      // Reset session-specific state on load
+      for (const id of Object.keys(data)) {
+        data[id].hostId = null;
+        data[id].raisedHands = [];
+        if (data[id].currentPage === undefined) data[id].currentPage = 0;
+      }
+      return data;
+    }
+  } catch (e) {
+    console.error('Failed to load rooms:', e);
+  }
+  return {};
+}
+
+function saveRooms() {
+  try {
+    fs.writeFileSync(ROOMS_FILE, JSON.stringify(rooms, null, 2));
+  } catch (e) {
+    console.error('Failed to save rooms:', e);
+  }
+}
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'uploads/'),
@@ -28,12 +60,13 @@ const io = new Server(server, {
   cors: { origin: 'http://localhost:3000', methods: ['GET', 'POST'] }
 });
 
-// rooms[id] = { pdfUrl, shapes, hostId, raisedHands: string[] }
-const rooms = {};
+// rooms[id] = { pdfUrl, shapes, currentPage, hostId, raisedHands }
+const rooms = loadRooms();
 
 app.post('/create-room', (req, res) => {
   const roomId = uuidv4();
-  rooms[roomId] = { shapes: [], pdfUrl: req.body.pdfUrl, hostId: null, raisedHands: [] };
+  rooms[roomId] = { shapes: [], pdfUrl: req.body.pdfUrl, currentPage: 0, hostId: null, raisedHands: [] };
+  saveRooms();
   res.json({ roomId });
 });
 
@@ -46,7 +79,7 @@ app.post('/upload', upload.single('pdf'), (req, res) => {
 app.get('/room/:roomId', (req, res) => {
   const room = rooms[req.params.roomId];
   if (!room) return res.status(404).json({ error: 'Room not found' });
-  res.json({ pdfUrl: room.pdfUrl });
+  res.json({ pdfUrl: room.pdfUrl, currentPage: room.currentPage ?? 0 });
 });
 
 io.on('connection', (socket) => {
@@ -57,19 +90,20 @@ io.on('connection', (socket) => {
     currentRoom = roomId;
     const room = rooms[roomId];
     if (!room) return;
-    // First socket to join becomes the host.
     if (!room.hostId) room.hostId = socket.id;
     socket.emit('load-shapes', room.shapes);
     socket.emit('room-info', {
       isHost: socket.id === room.hostId,
       raisedHands: room.raisedHands,
+      currentPage: room.currentPage ?? 0,
     });
   });
 
   socket.on('new-shape', ({ roomId, shape }) => {
     const room = rooms[roomId];
     if (!room) return;
-    room.shapes.push(shape); // shape includes ownerId set by client
+    room.shapes.push(shape);
+    saveRooms();
     socket.to(roomId).emit('new-shape', shape);
   });
 
@@ -80,8 +114,9 @@ io.on('connection', (socket) => {
     if (shape) {
       const isHost = socket.id === room.hostId;
       const isOwner = !shape.ownerId || shape.ownerId === socket.id;
-      if (!isHost && !isOwner) return; // enforce ownership
+      if (!isHost && !isOwner) return;
       room.shapes = room.shapes.filter(s => s.id !== id);
+      saveRooms();
     }
     // Broadcast regardless (shape may not exist if pixel-erase already removed it).
     socket.to(roomId).emit('delete-shape', id);
@@ -90,11 +125,15 @@ io.on('connection', (socket) => {
   socket.on('undo', (roomId) => {
     if (!rooms[roomId] || rooms[roomId].shapes.length === 0) return;
     rooms[roomId].shapes.pop();
+    saveRooms();
     socket.to(roomId).emit('undo');
   });
 
   socket.on('clear', (roomId) => {
-    if (rooms[roomId]) rooms[roomId].shapes = [];
+    if (rooms[roomId]) {
+      rooms[roomId].shapes = [];
+      saveRooms();
+    }
     socket.to(roomId).emit('clear');
   });
 
@@ -102,7 +141,16 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room) return;
     room.shapes = room.shapes.map(s => s.id === id ? { ...s, ...changes } : s);
+    saveRooms();
     socket.to(roomId).emit('update-shape', { id, changes });
+  });
+
+  socket.on('change-page', ({ roomId, page }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    room.currentPage = page;
+    saveRooms();
+    socket.to(roomId).emit('page-changed', page);
   });
 
   // Laser pointer — no storage, pure broadcast.

@@ -74,6 +74,8 @@ const ICONS: Record<string, React.ReactNode> = {
     </>
   ),
   check: <path d="M20 6 9 17l-5-5" />,
+  chevronLeft: <path d="M15 18l-6-6 6-6" />,
+  chevronRight: <path d="M9 18l6-6-6-6" />,
 };
 
 function Icon({ name, className = 'w-[18px] h-[18px]' }: { name: string; className?: string }) {
@@ -120,6 +122,10 @@ export default function Home() {
   const [mySocketId, setMySocketId] = useState('');
   const [isHost, setIsHost] = useState(false);
 
+  // Page navigation
+  const [currentPage, setCurrentPage] = useState(0);
+  const [numPages, setNumPages] = useState(0);
+
   // Raise hand
   const [handRaised, setHandRaised] = useState(false);
   const [raisedHands, setRaisedHands] = useState<string[]>([]);
@@ -150,10 +156,13 @@ export default function Home() {
     socket.on('undo', () => setAnnotations(prev => prev.slice(0, -1)));
     socket.on('delete-shape', (id) => setAnnotations(prev => prev.filter(a => a.id !== id)));
 
-    socket.on('room-info', ({ isHost: h, raisedHands: rh }: { isHost: boolean; raisedHands: string[] }) => {
+    socket.on('room-info', ({ isHost: h, raisedHands: rh, currentPage: cp }: { isHost: boolean; raisedHands: string[]; currentPage: number }) => {
       setIsHost(h);
       setRaisedHands(rh ?? []);
+      setCurrentPage(cp ?? 0);
     });
+
+    socket.on('page-changed', (page: number) => setCurrentPage(page));
 
     socket.on('laser-move', ({ socketId, x, y, page }: { socketId: string; x: number; y: number; page: number }) => {
       setRemoteLasers(prev => [...prev.filter(l => l.socketId !== socketId), { socketId, x, y, page }]);
@@ -175,6 +184,7 @@ export default function Home() {
       socket.off('connect');
       socket.off('load-shapes'); socket.off('new-shape'); socket.off('clear');
       socket.off('undo'); socket.off('delete-shape'); socket.off('room-info');
+      socket.off('page-changed');
       socket.off('laser-move'); socket.off('laser-stop');
       socket.off('raise-hand'); socket.off('lower-hand');
     };
@@ -189,6 +199,7 @@ export default function Home() {
       if (!res.ok) { alert('Room not found!'); setLoading(false); return; }
       const data = await res.json();
       setPdfUrl(data.pdfUrl);
+      setCurrentPage(data.currentPage ?? 0);
       setRoomId(cleanId);
       setStage('room');
       socket.emit('join-room', cleanId);
@@ -212,6 +223,7 @@ export default function Home() {
     });
     const { roomId: rid } = await res.json();
     setPdfUrl(url);
+    setCurrentPage(0);
     setRoomId(rid);
     setStage('room');
     socket.emit('join-room', rid);
@@ -229,6 +241,8 @@ export default function Home() {
     setHandRaised(false);
     setRaisedHands([]);
     setRemoteLasers([]);
+    setCurrentPage(0);
+    setNumPages(0);
     window.history.pushState({}, '', '/');
   }
 
@@ -239,8 +253,6 @@ export default function Home() {
   }
 
   function handleAnnotationAdd(annotation: any) {
-    // Preserve an explicit ownerId (e.g. pixel-erase sub-strokes keep original owner);
-    // otherwise stamp with the local socket ID.
     const withOwner = { ...annotation, ownerId: annotation.ownerId ?? socket.id };
     setAnnotations(prev => [...prev, withOwner]);
     setUndoStack(prev => [...prev, withOwner.id]);
@@ -282,6 +294,12 @@ export default function Home() {
 
   function handleLaserStop() {
     socket.emit('laser-stop', roomId);
+  }
+
+  function handlePageChange(page: number) {
+    if (page < 0 || page >= numPages || page === currentPage) return;
+    setCurrentPage(page);
+    socket.emit('change-page', { roomId, page });
   }
 
   const isCustomColor = !PRESET_COLORS.includes(color);
@@ -464,6 +482,34 @@ export default function Home() {
           <Icon name="trash" />
         </button>
 
+        {/* Page navigation */}
+        {numPages > 1 && (
+          <>
+            <div className="w-px h-6 bg-black/10 mx-1" />
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 0}
+                title="Previous page"
+                className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-900 disabled:opacity-30 transition-colors"
+              >
+                <Icon name="chevronLeft" />
+              </button>
+              <span className="text-xs font-medium text-gray-500 tabular-nums w-14 text-center select-none">
+                {currentPage + 1} / {numPages}
+              </span>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage >= numPages - 1}
+                title="Next page"
+                className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-900 disabled:opacity-30 transition-colors"
+              >
+                <Icon name="chevronRight" />
+              </button>
+            </div>
+          </>
+        )}
+
         {/* Role badge + raise hand + share — pushed to the right */}
         <div className="ml-auto flex items-center gap-2">
           {isHost ? (
@@ -519,6 +565,9 @@ export default function Home() {
             isHost={isHost}
             mySocketId={mySocketId}
             remoteLasers={remoteLasers}
+            currentPage={currentPage}
+            onPageChange={handlePageChange}
+            onNumPagesLoaded={setNumPages}
             onAnnotationAdd={handleAnnotationAdd}
             onAnnotationUpdate={handleAnnotationUpdate}
             onAnnotationDelete={handleAnnotationDelete}
