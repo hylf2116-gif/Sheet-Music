@@ -76,6 +76,14 @@ const ICONS: Record<string, React.ReactNode> = {
   check: <path d="M20 6 9 17l-5-5" />,
   chevronLeft: <path d="M15 18l-6-6 6-6" />,
   chevronRight: <path d="M9 18l6-6-6-6" />,
+  sync: (
+    <>
+      <path d="M21 2v6h-6" />
+      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+      <path d="M3 22v-6h6" />
+      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+    </>
+  ),
 };
 
 function Icon({ name, className = 'w-[18px] h-[18px]' }: { name: string; className?: string }) {
@@ -136,6 +144,11 @@ export default function Home() {
   // Toasts
   const [toasts, setToasts] = useState<{ id: string; msg: string }[]>([]);
 
+  // Scroll sync & presence
+  const [scrollSyncEnabled, setScrollSyncEnabled] = useState(false);
+  const [remoteScrollPosition, setRemoteScrollPosition] = useState<number | null>(null);
+  const [participantCount, setParticipantCount] = useState(0);
+
   function addToast(msg: string) {
     const id = crypto.randomUUID();
     setToasts(prev => [...prev, { id, msg }]);
@@ -153,8 +166,10 @@ export default function Home() {
     socket.on('load-shapes', (existing) => setAnnotations(existing));
     socket.on('new-shape', (shape) => setAnnotations(prev => [...prev, shape]));
     socket.on('clear', () => setAnnotations([]));
-    socket.on('undo', () => setAnnotations(prev => prev.slice(0, -1)));
     socket.on('delete-shape', (id) => setAnnotations(prev => prev.filter(a => a.id !== id)));
+    socket.on('update-shape', ({ id, changes }: { id: string; changes: any }) =>
+      setAnnotations(prev => prev.map(a => a.id === id ? { ...a, ...changes } : a)));
+    socket.on('undo', (id: string) => setAnnotations(prev => prev.filter(a => a.id !== id)));
 
     socket.on('room-info', ({ isHost: h, raisedHands: rh, currentPage: cp }: { isHost: boolean; raisedHands: string[]; currentPage: number }) => {
       setIsHost(h);
@@ -180,13 +195,17 @@ export default function Home() {
       setRaisedHands(prev => prev.filter(id => id !== socketId));
     });
 
+    socket.on('scroll-sync', (ratio: number) => setRemoteScrollPosition(ratio));
+    socket.on('room-members-count', (count: number) => setParticipantCount(count));
+
     return () => {
       socket.off('connect');
       socket.off('load-shapes'); socket.off('new-shape'); socket.off('clear');
-      socket.off('undo'); socket.off('delete-shape'); socket.off('room-info');
+      socket.off('delete-shape'); socket.off('update-shape'); socket.off('undo'); socket.off('room-info');
       socket.off('page-changed');
       socket.off('laser-move'); socket.off('laser-stop');
       socket.off('raise-hand'); socket.off('lower-hand');
+      socket.off('scroll-sync'); socket.off('room-members-count');
     };
   }, []);
 
@@ -232,6 +251,7 @@ export default function Home() {
   }
 
   function goHome() {
+    if (roomId) socket.emit('leave-room', roomId);
     setStage('home');
     setRoomId(null);
     setPdfUrl(null);
@@ -243,6 +263,9 @@ export default function Home() {
     setRemoteLasers([]);
     setCurrentPage(0);
     setNumPages(0);
+    setScrollSyncEnabled(false);
+    setRemoteScrollPosition(null);
+    setParticipantCount(0);
     window.history.pushState({}, '', '/');
   }
 
@@ -253,9 +276,10 @@ export default function Home() {
   }
 
   function handleAnnotationAdd(annotation: any) {
-    const withOwner = { ...annotation, ownerId: annotation.ownerId ?? socket.id };
+    const { _skipUndo, ...rest } = annotation;
+    const withOwner = { ...rest, ownerId: rest.ownerId ?? socket.id };
     setAnnotations(prev => [...prev, withOwner]);
-    setUndoStack(prev => [...prev, withOwner.id]);
+    if (!_skipUndo) setUndoStack(prev => [...prev, withOwner.id]);
     socket.emit('new-shape', { roomId, shape: withOwner });
   }
 
@@ -264,16 +288,12 @@ export default function Home() {
     socket.emit('delete-shape', { roomId, id });
   }
 
-  function handleAnnotationUpdate(id: string, changes: any) {
-    setAnnotations(prev => prev.map(a => a.id === id ? { ...a, ...changes } : a));
-    socket.emit('update-shape', { roomId, id, changes });
-  }
-
   function undo() {
     if (undoStack.length === 0) return;
     const lastId = undoStack[undoStack.length - 1];
     setUndoStack(prev => prev.slice(0, -1));
-    handleAnnotationDelete(lastId);
+    setAnnotations(prev => prev.filter(a => a.id !== lastId));
+    socket.emit('undo', { roomId, id: lastId });
   }
 
   function clearAll() {
@@ -296,10 +316,14 @@ export default function Home() {
     socket.emit('laser-stop', roomId);
   }
 
+  function handleScrollPositionChange(ratio: number) {
+    socket.emit('scroll-sync', { roomId, ratio });
+  }
+
   function handlePageChange(page: number) {
     if (page < 0 || page >= numPages || page === currentPage) return;
     setCurrentPage(page);
-    socket.emit('change-page', { roomId, page });
+    if (isHost) socket.emit('change-page', { roomId, page });
   }
 
   const isCustomColor = !PRESET_COLORS.includes(color);
@@ -313,7 +337,7 @@ export default function Home() {
         <header className="relative z-10 px-10 py-6 flex items-center">
           <div className="flex items-center gap-2">
             <span className="text-xl">🎵</span>
-            <span className="text-lg font-bold tracking-tight">Scoreflow</span>
+            <span className="text-lg font-bold tracking-tight">Unino</span>
           </div>
         </header>
 
@@ -391,7 +415,7 @@ export default function Home() {
           title="Back to Home"
         >
           <Icon name="music" className="w-[18px] h-[18px] text-indigo-600" />
-          <span className="text-sm font-semibold tracking-tight">Scoreflow</span>
+          <span className="text-sm font-semibold tracking-tight">Unino</span>
         </button>
 
         <div className="w-px h-6 bg-black/10 mx-1" />
@@ -517,6 +541,23 @@ export default function Home() {
               <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
                 <span>👑</span> Host
               </span>
+              {participantCount > 0 && (
+                <span className="text-xs font-medium text-gray-500 bg-black/[0.04] border border-black/[0.08] rounded-full px-2.5 py-1 select-none">
+                  👥 {participantCount} in room
+                </span>
+              )}
+              <button
+                onClick={() => setScrollSyncEnabled(prev => !prev)}
+                title={scrollSyncEnabled ? 'Scroll sync on — participants follow your scroll' : 'Turn on scroll sync'}
+                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
+                  scrollSyncEnabled
+                    ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                    : 'bg-black/[0.04] text-gray-500 hover:bg-black/[0.07]'
+                }`}
+              >
+                <Icon name="sync" className="w-3.5 h-3.5" />
+                {scrollSyncEnabled ? 'Sync ON' : 'Sync'}
+              </button>
               {raisedHands.length > 0 && (
                 <span className="flex items-center gap-1 text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2 py-1">
                   ✋ {raisedHands.length}
@@ -569,10 +610,12 @@ export default function Home() {
             onPageChange={handlePageChange}
             onNumPagesLoaded={setNumPages}
             onAnnotationAdd={handleAnnotationAdd}
-            onAnnotationUpdate={handleAnnotationUpdate}
             onAnnotationDelete={handleAnnotationDelete}
             onLaserMove={handleLaserMove}
             onLaserStop={handleLaserStop}
+            scrollSyncEnabled={scrollSyncEnabled}
+            remoteScrollPosition={remoteScrollPosition}
+            onScrollPositionChange={handleScrollPositionChange}
           />
         )}
       </div>

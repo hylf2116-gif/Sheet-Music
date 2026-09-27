@@ -16,6 +16,8 @@ const DATA_DIR = path.join(__dirname, 'data');
 const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
 
 function loadRooms() {
   try {
@@ -36,11 +38,9 @@ function loadRooms() {
 }
 
 function saveRooms() {
-  try {
-    fs.writeFileSync(ROOMS_FILE, JSON.stringify(rooms, null, 2));
-  } catch (e) {
-    console.error('Failed to save rooms:', e);
-  }
+  fs.writeFile(ROOMS_FILE, JSON.stringify(rooms, null, 2), err => {
+    if (err) console.error('Failed to save rooms:', err);
+  });
 }
 
 const storage = multer.diskStorage({
@@ -82,6 +82,13 @@ app.get('/room/:roomId', (req, res) => {
   res.json({ pdfUrl: room.pdfUrl, currentPage: room.currentPage ?? 0 });
 });
 
+function emitMemberCount(roomId) {
+  const room = rooms[roomId];
+  if (!room || !room.hostId) return;
+  const count = io.sockets.adapter.rooms.get(roomId)?.size ?? 0;
+  io.to(room.hostId).emit('room-members-count', count);
+}
+
 io.on('connection', (socket) => {
   let currentRoom = null;
 
@@ -97,6 +104,7 @@ io.on('connection', (socket) => {
       raisedHands: room.raisedHands,
       currentPage: room.currentPage ?? 0,
     });
+    emitMemberCount(roomId);
   });
 
   socket.on('new-shape', ({ roomId, shape }) => {
@@ -122,11 +130,18 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('delete-shape', id);
   });
 
-  socket.on('undo', (roomId) => {
-    if (!rooms[roomId] || rooms[roomId].shapes.length === 0) return;
-    rooms[roomId].shapes.pop();
-    saveRooms();
-    socket.to(roomId).emit('undo');
+  socket.on('undo', ({ roomId, id }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    const shape = room.shapes.find(s => s.id === id);
+    if (shape) {
+      const isHost = socket.id === room.hostId;
+      const isOwner = !shape.ownerId || shape.ownerId === socket.id;
+      if (!isHost && !isOwner) return;
+      room.shapes = room.shapes.filter(s => s.id !== id);
+      saveRooms();
+    }
+    socket.to(roomId).emit('undo', id);
   });
 
   socket.on('clear', (roomId) => {
@@ -147,10 +162,16 @@ io.on('connection', (socket) => {
 
   socket.on('change-page', ({ roomId, page }) => {
     const room = rooms[roomId];
-    if (!room) return;
+    if (!room || socket.id !== room.hostId) return;
     room.currentPage = page;
     saveRooms();
     socket.to(roomId).emit('page-changed', page);
+  });
+
+  socket.on('scroll-sync', ({ roomId, ratio }) => {
+    const room = rooms[roomId];
+    if (!room || socket.id !== room.hostId) return;
+    socket.to(roomId).emit('scroll-sync', ratio);
   });
 
   // Laser pointer — no storage, pure broadcast.
@@ -175,11 +196,24 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('lower-hand', { socketId: socket.id });
   });
 
+  socket.on('leave-room', (roomId) => {
+    socket.leave(roomId);
+    if (currentRoom === roomId) currentRoom = null;
+    const room = rooms[roomId];
+    if (room) {
+      room.raisedHands = room.raisedHands.filter(id => id !== socket.id);
+      socket.to(roomId).emit('laser-stop', { socketId: socket.id });
+      socket.to(roomId).emit('lower-hand', { socketId: socket.id });
+      emitMemberCount(roomId);
+    }
+  });
+
   socket.on('disconnect', () => {
     if (currentRoom && rooms[currentRoom]) {
       rooms[currentRoom].raisedHands = rooms[currentRoom].raisedHands.filter(id => id !== socket.id);
       socket.to(currentRoom).emit('laser-stop', { socketId: socket.id });
       socket.to(currentRoom).emit('lower-hand', { socketId: socket.id });
+      emitMemberCount(currentRoom);
     }
   });
 });

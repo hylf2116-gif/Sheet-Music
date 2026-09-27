@@ -16,10 +16,12 @@ interface Props {
   onPageChange: (page: number) => void;
   onNumPagesLoaded: (n: number) => void;
   onAnnotationAdd: (annotation: any) => void;
-  onAnnotationUpdate: (id: string, changes: any) => void;
   onAnnotationDelete: (id: string) => void;
   onLaserMove: (x: number, y: number, page: number) => void;
   onLaserStop: () => void;
+  scrollSyncEnabled: boolean;
+  remoteScrollPosition: number | null;
+  onScrollPositionChange: (ratio: number) => void;
 }
 
 function ChevronLeft() {
@@ -41,8 +43,9 @@ export default function PDFViewer({
   pdfUrl, annotations, activeTool, eraserMode, color, strokeWidth,
   isHost, mySocketId, remoteLasers,
   currentPage, onPageChange, onNumPagesLoaded,
-  onAnnotationAdd, onAnnotationUpdate, onAnnotationDelete,
+  onAnnotationAdd, onAnnotationDelete,
   onLaserMove, onLaserStop,
+  scrollSyncEnabled, remoteScrollPosition, onScrollPositionChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pdfDocRef = useRef<any>(null);
@@ -66,6 +69,9 @@ export default function PDFViewer({
   const lastEraseRef = useRef<{ x: number; y: number } | null>(null);
   const laserTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onLaserStopRef = useRef(onLaserStop);
+  const onAnnotationDeleteRef = useRef(onAnnotationDelete);
+  const onScrollPositionChangeRef = useRef(onScrollPositionChange);
+  const scrollSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Page-sync refs (no re-render needed, just coordination).
   const renderedSetRef = useRef(new Set<number>());
@@ -80,6 +86,8 @@ export default function PDFViewer({
 
   useEffect(() => { onLaserStopRef.current = onLaserStop; }, [onLaserStop]);
   useEffect(() => { onPageChangeRef.current = onPageChange; }, [onPageChange]);
+  useEffect(() => { onAnnotationDeleteRef.current = onAnnotationDelete; }, [onAnnotationDelete]);
+  useEffect(() => { onScrollPositionChangeRef.current = onScrollPositionChange; }, [onScrollPositionChange]);
 
   // ── Load PDF metadata (fast — no pixel rendering) ──────────────────────
   useEffect(() => {
@@ -101,6 +109,7 @@ export default function PDFViewer({
         }),
       );
       if (cancelled) return;
+      renderedSetRef.current = new Set();
       setPageMetas(metas);
       setPageCanvases(new Array(doc.numPages).fill(null));
       onNumPagesLoaded(doc.numPages);
@@ -109,10 +118,11 @@ export default function PDFViewer({
     return () => { cancelled = true; };
   }, [pdfUrl]);
 
-  // ── Lazy rendering: render pages only when they enter (or near) viewport ──
+  // ── Eager batched rendering: first 3 pages immediately, rest in background ──
   useEffect(() => {
     const doc = pdfDocRef.current;
     if (!doc || !pageMetas.length) return;
+    let cancelled = false;
 
     async function renderPage(idx: number) {
       if (renderedSetRef.current.has(idx)) return;
@@ -124,30 +134,29 @@ export default function PDFViewer({
         c.width = vp.width;
         c.height = vp.height;
         await pg.render({ canvasContext: c.getContext('2d')!, viewport: vp }).promise;
-        setPageCanvases(prev => { const n = [...prev]; n[idx] = c; return n; });
+        if (!cancelled) setPageCanvases(prev => { const n = [...prev]; n[idx] = c; return n; });
       } catch {
-        renderedSetRef.current.delete(idx); // allow retry
+        renderedSetRef.current.delete(idx);
       }
     }
 
-    // 200% rootMargin = render up to ~2 viewport-heights above/below visible area.
-    const obs = new IntersectionObserver(entries => {
-      entries.forEach(e => {
-        if (!e.isIntersecting) return;
-        const idx = Number(e.target.getAttribute('data-page-index'));
-        for (let i = Math.max(0, idx - 1); i <= Math.min(pageMetas.length - 1, idx + 2); i++) {
-          renderPage(i);
-        }
-      });
-    }, { root: containerRef.current, rootMargin: '200% 0px 200% 0px' });
+    // Render first 3 pages in parallel immediately.
+    const eager = Math.min(3, pageMetas.length);
+    for (let i = 0; i < eager; i++) renderPage(i);
 
-    pageContainerRefs.current.slice(0, pageMetas.length).forEach(el => el && obs.observe(el));
-    // Eagerly kick off the first two pages so the user isn't staring at a spinner.
-    renderPage(0);
-    if (pageMetas.length > 1) renderPage(1);
+    // Render remaining pages one by one in background with a small delay between each.
+    async function renderRemainder() {
+      for (let i = eager; i < pageMetas.length; i++) {
+        if (cancelled) break;
+        await renderPage(i);
+        if (cancelled) break;
+        await new Promise<void>(resolve => setTimeout(resolve, 80));
+      }
+    }
+    if (pageMetas.length > eager) renderRemainder();
 
-    return () => obs.disconnect();
-  }, [pageMetas.length]);
+    return () => { cancelled = true; };
+  }, [pageMetas]);
 
   // ── Draw each offscreen canvas to its DOM canvas once rendered ────────
   useEffect(() => {
@@ -216,7 +225,7 @@ export default function PDFViewer({
       obs.disconnect();
       if (pageChangeDebouncerRef.current) clearTimeout(pageChangeDebouncerRef.current);
     };
-  }, [pageMetas.length]);
+  }, [pageMetas]);
 
   // ── Keyboard: delete selected annotation ─────────────────────────────
   useEffect(() => {
@@ -224,13 +233,45 @@ export default function PDFViewer({
       if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
         const ann = annotations.find(a => a.id === selected);
         if (!ann || !(isHost || !ann.ownerId || ann.ownerId === mySocketId)) return;
-        onAnnotationDelete(selected);
+        onAnnotationDeleteRef.current(selected);
         setSelected(null);
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selected, annotations, isHost, mySocketId]);
+
+  // ── Scroll sync: host broadcasts position, participants apply it ──────────
+  useEffect(() => {
+    if (!scrollSyncEnabled || !isHost) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    function handleScroll() {
+      if (scrollSyncTimerRef.current) clearTimeout(scrollSyncTimerRef.current);
+      scrollSyncTimerRef.current = setTimeout(() => {
+        const max = container!.scrollHeight - container!.clientHeight;
+        if (max <= 0) return;
+        onScrollPositionChangeRef.current(container!.scrollTop / max);
+      }, 50);
+    }
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollSyncTimerRef.current) clearTimeout(scrollSyncTimerRef.current);
+    };
+  }, [scrollSyncEnabled, isHost]);
+
+  useEffect(() => {
+    if (remoteScrollPosition === null || isHost) return;
+    const container = containerRef.current;
+    if (!container) return;
+    isProgrammaticScrollRef.current = true;
+    container.scrollTop = remoteScrollPosition * Math.max(0, container.scrollHeight - container.clientHeight);
+    const t = setTimeout(() => { isProgrammaticScrollRef.current = false; }, 200);
+    return () => clearTimeout(t);
+  }, [remoteScrollPosition, isHost]);
 
   // ── Drawing helpers ───────────────────────────────────────────────────
 
@@ -395,14 +436,14 @@ export default function PDFViewer({
           segs.forEach(pts => onAnnotationAdd({
             id: crypto.randomUUID(), type: 'pen', page: pageIndex,
             points: pts, color: a.color, strokeWidth: a.strokeWidth,
-            ownerId: a.ownerId,
+            ownerId: a.ownerId, _skipUndo: true,
           }));
         }
       } else if (a.type === 'highlight') {
         const pieces = clipHighlight(a, from, to, r, aspect);
         if (pieces !== null) {
           onAnnotationDelete(a.id);
-          pieces.forEach(piece => onAnnotationAdd({ ...piece, id: crypto.randomUUID(), ownerId: a.ownerId }));
+          pieces.forEach(piece => onAnnotationAdd({ ...piece, id: crypto.randomUUID(), ownerId: a.ownerId, _skipUndo: true }));
         }
       } else if (shapeTouched(a, to.x, to.y, r, aspect) || shapeTouched(a, from.x, from.y, r, aspect)) {
         onAnnotationDelete(a.id);
@@ -665,6 +706,24 @@ export default function PDFViewer({
                 );
               })}
             </svg>
+
+            {/* Delete button — visible only for the selected annotation on this page when user has permission */}
+            {(() => {
+              if (!selected) return null;
+              const ann = annotations.find(a => a.id === selected && a.page === pageIndex);
+              if (!ann || !canDelete(ann)) return null;
+              return (
+                <button
+                  className="absolute top-2 right-2 z-20 flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-2 py-1 rounded-lg shadow-lg transition-colors"
+                  onClick={e => { e.stopPropagation(); onAnnotationDelete(ann.id); setSelected(null); }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                    <path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  Delete
+                </button>
+              );
+            })()}
           </div>
         </div>
       ))}
