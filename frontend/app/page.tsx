@@ -1,116 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 import PDFViewer from './PDFViewer';
+import MetronomePanel, { type MetronomeState } from './MetronomePanel';
+import Toolbar, { type ToolbarPos } from './Toolbar';
+import AuthModal from './AuthModal';
+import Sidebar from './Sidebar';
 
 const socket = io('http://localhost:3001');
-
-const ICONS: Record<string, React.ReactNode> = {
-  select: <path d="M5 3l14 7-6 2-2 6z" fill="currentColor" stroke="none" />,
-  ellipse: <ellipse cx="12" cy="12" rx="10" ry="6" />,
-  pen: (
-    <>
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
-    </>
-  ),
-  line: <path d="M5 19 19 5" />,
-  highlight: (
-    <>
-      <path d="M9 11l-6 6v3h9l3-3" />
-      <path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
-    </>
-  ),
-  eraser: (
-    <>
-      <path d="m7 21-4.3-4.3a2 2 0 0 1 0-2.8l9.6-9.6a2 2 0 0 1 2.8 0l5.6 5.6a2 2 0 0 1 0 2.8L13 21" />
-      <path d="M22 21H7" />
-    </>
-  ),
-  text: (
-    <>
-      <path d="M4 7V4h16v3" />
-      <path d="M9 20h6" />
-      <path d="M12 4v16" />
-    </>
-  ),
-  laser: (
-    <>
-      <circle cx="12" cy="12" r="3" />
-      <line x1="12" y1="2" x2="12" y2="7" />
-      <line x1="12" y1="17" x2="12" y2="22" />
-      <line x1="2" y1="12" x2="7" y2="12" />
-      <line x1="17" y1="12" x2="22" y2="12" />
-    </>
-  ),
-  music: (
-    <>
-      <path d="M9 18V5l12-2v13" />
-      <circle cx="6" cy="18" r="3" />
-      <circle cx="18" cy="16" r="3" />
-    </>
-  ),
-  undo: (
-    <>
-      <path d="M9 14 4 9l5-5" />
-      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H9" />
-    </>
-  ),
-  trash: (
-    <>
-      <path d="M3 6h18" />
-      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-      <path d="M10 11v6" />
-      <path d="M14 11v6" />
-    </>
-  ),
-  link: (
-    <>
-      <path d="M9 17H7A5 5 0 0 1 7 7h2" />
-      <path d="M15 7h2a5 5 0 1 1 0 10h-2" />
-      <path d="M8 12h8" />
-    </>
-  ),
-  check: <path d="M20 6 9 17l-5-5" />,
-  chevronLeft: <path d="M15 18l-6-6 6-6" />,
-  chevronRight: <path d="M9 18l6-6-6-6" />,
-  sync: (
-    <>
-      <path d="M21 2v6h-6" />
-      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-      <path d="M3 22v-6h6" />
-      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-    </>
-  ),
-};
-
-function Icon({ name, className = 'w-[18px] h-[18px]' }: { name: string; className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={className}>
-      {ICONS[name]}
-    </svg>
-  );
-}
-
-const PRESET_COLORS = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#007aff', '#af52de', '#1c1c1e'];
-const STROKE_SIZES = [
-  { label: 'Thin', w: 2, dot: 5 },
-  { label: 'Medium', w: 4, dot: 8 },
-  { label: 'Thick', w: 8, dot: 12 },
-];
-
-const TOOLS = [
-  { id: 'pen',       label: 'Pen' },
-  { id: 'highlight', label: 'Highlight' },
-  { id: 'ellipse',   label: 'Ellipse' },
-  { id: 'line',      label: 'Line' },
-  { id: 'text',      label: 'Text' },
-  { id: 'eraser',    label: 'Eraser' },
-  { id: 'select',    label: 'Select' },
-  { id: 'laser',     label: 'Laser Pointer' },
-];
+const POS_KEY = 'unino_toolbar_pos';
 
 export default function Home() {
   const [stage, setStage] = useState<'home' | 'room'>('home');
@@ -124,7 +25,9 @@ export default function Home() {
   const [joinCode, setJoinCode] = useState('');
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [undoStack, setUndoStack] = useState<any[]>([]);
+  const [undoStack, setUndoStack] = useState<
+    ({ action: 'add'; id: string } | { action: 'delete'; annotation: any })[]
+  >([]);
 
   // Identity & role
   const [mySocketId, setMySocketId] = useState('');
@@ -139,15 +42,78 @@ export default function Home() {
   const [raisedHands, setRaisedHands] = useState<string[]>([]);
 
   // Laser
-  const [remoteLasers, setRemoteLasers] = useState<{ socketId: string; x: number; y: number; page: number }[]>([]);
+  const [remoteLasers, setRemoteLasers] = useState<
+    { socketId: string; x: number; y: number; page: number }[]
+  >([]);
 
   // Toasts
   const [toasts, setToasts] = useState<{ id: string; msg: string }[]>([]);
+
+  const [metronomePanelOpen, setMetronomePanelOpen] = useState(false);
+  const [remoteMetronomeState, setRemoteMetronomeState] = useState<MetronomeState | null>(null);
+
+  const roomIdRef = useRef<string | null>(null);
+  useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
 
   // Scroll sync & presence
   const [scrollSyncEnabled, setScrollSyncEnabled] = useState(false);
   const [remoteScrollPosition, setRemoteScrollPosition] = useState<number | null>(null);
   const [participantCount, setParticipantCount] = useState(0);
+
+  // Toolbar position
+  const [toolbarPos, setToolbarPosState] = useState<ToolbarPos>('top');
+  useEffect(() => {
+    const saved = localStorage.getItem(POS_KEY) as ToolbarPos | null;
+    if (saved === 'top' || saved === 'left' || saved === 'right') setToolbarPosState(saved);
+  }, []);
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) setShowAuthModal(false);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  function getInitial() {
+    const name = user?.user_metadata?.full_name as string | undefined;
+    if (name) return name[0].toUpperCase();
+    if (user?.email) return user.email[0].toUpperCase();
+    return '?';
+  }
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    setShowUserMenu(false);
+  }
+
+  // ── Shared helpers ────────────────────────────────────────────────────────
+  function changeToolbarPos(p: ToolbarPos) {
+    setToolbarPosState(p);
+    localStorage.setItem(POS_KEY, p);
+  }
 
   function addToast(msg: string) {
     const id = crypto.randomUUID();
@@ -157,7 +123,10 @@ export default function Home() {
 
   useEffect(() => {
     if (socket.connected) setMySocketId(socket.id!);
-    socket.on('connect', () => setMySocketId(socket.id!));
+    socket.on('connect', () => {
+      setMySocketId(socket.id!);
+      if (roomIdRef.current) socket.emit('join-room', roomIdRef.current);
+    });
 
     const params = new URLSearchParams(window.location.search);
     const rid = params.get('room');
@@ -171,7 +140,9 @@ export default function Home() {
       setAnnotations(prev => prev.map(a => a.id === id ? { ...a, ...changes } : a)));
     socket.on('undo', (id: string) => setAnnotations(prev => prev.filter(a => a.id !== id)));
 
-    socket.on('room-info', ({ isHost: h, raisedHands: rh, currentPage: cp }: { isHost: boolean; raisedHands: string[]; currentPage: number }) => {
+    socket.on('room-info', ({ isHost: h, raisedHands: rh, currentPage: cp }: {
+      isHost: boolean; raisedHands: string[]; currentPage: number;
+    }) => {
       setIsHost(h);
       setRaisedHands(rh ?? []);
       setCurrentPage(cp ?? 0);
@@ -179,8 +150,13 @@ export default function Home() {
 
     socket.on('page-changed', (page: number) => setCurrentPage(page));
 
-    socket.on('laser-move', ({ socketId, x, y, page }: { socketId: string; x: number; y: number; page: number }) => {
-      setRemoteLasers(prev => [...prev.filter(l => l.socketId !== socketId), { socketId, x, y, page }]);
+    socket.on('laser-move', ({ socketId, x, y, page }: {
+      socketId: string; x: number; y: number; page: number;
+    }) => {
+      setRemoteLasers(prev => [
+        ...prev.filter(l => l.socketId !== socketId),
+        { socketId, x, y, page },
+      ]);
     });
     socket.on('laser-stop', ({ socketId }: { socketId: string }) => {
       setRemoteLasers(prev => prev.filter(l => l.socketId !== socketId));
@@ -197,15 +173,17 @@ export default function Home() {
 
     socket.on('scroll-sync', (ratio: number) => setRemoteScrollPosition(ratio));
     socket.on('room-members-count', (count: number) => setParticipantCount(count));
+    socket.on('metronome-update', (state: MetronomeState) => setRemoteMetronomeState(state));
 
     return () => {
       socket.off('connect');
       socket.off('load-shapes'); socket.off('new-shape'); socket.off('clear');
-      socket.off('delete-shape'); socket.off('update-shape'); socket.off('undo'); socket.off('room-info');
-      socket.off('page-changed');
+      socket.off('delete-shape'); socket.off('update-shape'); socket.off('undo');
+      socket.off('room-info'); socket.off('page-changed');
       socket.off('laser-move'); socket.off('laser-stop');
       socket.off('raise-hand'); socket.off('lower-hand');
       socket.off('scroll-sync'); socket.off('room-members-count');
+      socket.off('metronome-update');
     };
   }, []);
 
@@ -238,12 +216,13 @@ export default function Home() {
     const res = await fetch('http://localhost:3001/create-room', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pdfUrl: url }),
+      body: JSON.stringify({ pdfUrl: url, creatorId: user?.id ?? null }),
     });
     const { roomId: rid } = await res.json();
     setPdfUrl(url);
     setCurrentPage(0);
     setRoomId(rid);
+    setIsHost(true);
     setStage('room');
     socket.emit('join-room', rid);
     window.history.pushState({}, '', `?room=${rid}`);
@@ -279,27 +258,45 @@ export default function Home() {
     const { _skipUndo, ...rest } = annotation;
     const withOwner = { ...rest, ownerId: rest.ownerId ?? socket.id };
     setAnnotations(prev => [...prev, withOwner]);
-    if (!_skipUndo) setUndoStack(prev => [...prev, withOwner.id]);
+    if (!_skipUndo) setUndoStack(prev => [...prev, { action: 'add', id: withOwner.id }]);
     socket.emit('new-shape', { roomId, shape: withOwner });
   }
 
   function handleAnnotationDelete(id: string) {
-    setAnnotations(prev => prev.filter(a => a.id !== id));
+    setAnnotations(prev => {
+      const ann = prev.find(a => a.id === id);
+      if (ann && (isHost || ann.ownerId === socket.id)) {
+        setUndoStack(u => [...u, { action: 'delete', annotation: ann }]);
+      }
+      return prev.filter(a => a.id !== id);
+    });
     socket.emit('delete-shape', { roomId, id });
   }
 
   function undo() {
     if (undoStack.length === 0) return;
-    const lastId = undoStack[undoStack.length - 1];
+    const last = undoStack[undoStack.length - 1];
     setUndoStack(prev => prev.slice(0, -1));
-    setAnnotations(prev => prev.filter(a => a.id !== lastId));
-    socket.emit('undo', { roomId, id: lastId });
+    if (last.action === 'add') {
+      setAnnotations(prev => prev.filter(a => a.id !== last.id));
+      socket.emit('undo', { roomId, id: last.id });
+    } else {
+      const ann = last.annotation;
+      setAnnotations(prev => [...prev, ann]);
+      socket.emit('new-shape', { roomId, shape: ann });
+    }
   }
 
   function clearAll() {
     setAnnotations([]);
     setUndoStack([]);
     socket.emit('clear', roomId);
+  }
+
+  function toggleScrollSync() {
+    const next = !scrollSyncEnabled;
+    setScrollSyncEnabled(next);
+    if (!next) socket.emit('scroll-sync', { roomId, ratio: null });
   }
 
   function toggleHand() {
@@ -320,281 +317,215 @@ export default function Home() {
     socket.emit('scroll-sync', { roomId, ratio });
   }
 
-  function handlePageChange(page: number) {
+  function handlePageChange(page: number, fromScroll = false) {
     if (page < 0 || page >= numPages || page === currentPage) return;
     setCurrentPage(page);
-    if (isHost) socket.emit('change-page', { roomId, page });
+    if (isHost && (!fromScroll || scrollSyncEnabled)) {
+      socket.emit('change-page', { roomId, page });
+    }
   }
 
-  const isCustomColor = !PRESET_COLORS.includes(color);
+  function handleMetronomeUpdate(state: MetronomeState) {
+    socket.emit('metronome-update', { roomId, state });
+  }
 
   // ── HOME ──────────────────────────────────────────────────────────────────
   if (stage === 'home') {
+    const displayName =
+      ((user?.user_metadata?.full_name as string) ?? '').split(' ')[0] ||
+      user?.email?.split('@')[0];
+
     return (
-      <div className="min-h-screen bg-[#0a0a0f] text-white overflow-hidden relative">
-        <div className="absolute top-[-200px] left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none" />
+      <div className="min-h-screen bg-[#0a0a0f] text-white flex">
+        {user && (
+          <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(o => !o)} />
+        )}
 
-        <header className="relative z-10 px-10 py-6 flex items-center">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🎵</span>
-            <span className="text-lg font-bold tracking-tight">Unino</span>
-          </div>
-        </header>
+        <div className="relative flex-1 flex flex-col overflow-hidden">
+          {/* ambient glow */}
+          <div className="absolute top-[-200px] left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none" />
 
-        <main className="relative z-10 flex flex-col items-center justify-center px-6 pt-16 pb-32 text-center">
-          <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 text-sm text-gray-400 mb-8">
-            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-            Real-time sheet music collaboration
-          </div>
-
-          <h1 className="text-6xl font-bold mb-6 leading-tight">
-            <span className="bg-gradient-to-b from-white to-gray-500 bg-clip-text text-transparent">
-              Annotate music.<br />Together.
-            </span>
-          </h1>
-
-          <p className="text-gray-400 text-xl mb-16 max-w-lg">
-            Upload your score, share a link, and annotate in real time — with anyone.
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-2xl">
-            <div className="bg-white/5 hover:bg-white/8 border border-white/10 hover:border-white/20 rounded-3xl p-8 flex flex-col items-start gap-5 transition-all duration-300 text-left">
-              <div className="w-14 h-14 bg-indigo-500/20 border border-indigo-500/30 rounded-2xl flex items-center justify-center text-2xl">🎼</div>
-              <div>
-                <h2 className="text-xl font-bold mb-2">Start a session</h2>
-                <p className="text-gray-400 text-sm leading-relaxed">Upload a PDF score and create a room. Share the link with anyone to collaborate.</p>
-              </div>
-              <label className={`w-full py-3 rounded-xl text-sm font-semibold text-center cursor-pointer transition-colors ${loading ? 'bg-gray-600 text-gray-400' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
-                {loading ? 'Uploading...' : '+ Upload Score'}
-                <input type="file" accept=".pdf" onChange={handleUpload} className="hidden" disabled={loading} />
-              </label>
+          {/* ── Header ── */}
+          <header className="relative z-10 px-10 py-6 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎵</span>
+              <span className="text-lg font-bold tracking-tight">Unino</span>
             </div>
 
-            <div className="bg-white/5 hover:bg-white/8 border border-white/10 hover:border-white/20 rounded-3xl p-8 flex flex-col items-start gap-5 transition-all duration-300 text-left">
-              <div className="w-14 h-14 bg-emerald-500/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center text-2xl">🔗</div>
-              <div>
-                <h2 className="text-xl font-bold mb-2">Join a session</h2>
-                <p className="text-gray-400 text-sm leading-relaxed">Paste the link or room code you received to join a live session.</p>
-              </div>
-              <div className="w-full flex flex-col gap-2">
-                <input
-                  type="text"
-                  placeholder="Paste link or room code..."
-                  value={joinCode}
-                  onChange={e => setJoinCode(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && joinCode && joinRoom(joinCode)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-white/30 transition-colors"
-                />
+            {!authLoading && (
+              user ? (
+                <div className="relative" ref={userMenuRef}>
+                  <button
+                    onClick={() => setShowUserMenu(o => !o)}
+                    className="w-9 h-9 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-sm font-bold text-white transition-colors select-none"
+                  >
+                    {getInitial()}
+                  </button>
+
+                  {showUserMenu && (
+                    <div className="absolute right-0 top-11 bg-[#111118] border border-white/10 rounded-xl py-1.5 w-48 shadow-2xl z-50">
+                      <div className="px-4 py-2.5 border-b border-white/5 mb-1">
+                        <p className="text-sm font-medium text-white truncate">
+                          {(user.user_metadata?.full_name as string) || user.email}
+                        </p>
+                        {user.user_metadata?.full_name && (
+                          <p className="text-xs text-gray-500 truncate mt-0.5">{user.email}</p>
+                        )}
+                      </div>
+                      {(['Profile', 'My Sessions', 'Settings'] as const).map(label => (
+                        <button
+                          key={label}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 hover:text-white transition-colors"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                      <div className="border-t border-white/5 mt-1 pt-1">
+                        <button
+                          onClick={handleSignOut}
+                          className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-white/5 transition-colors"
+                        >
+                          Log out
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
                 <button
-                  onClick={() => joinCode && joinRoom(joinCode)}
-                  disabled={loading || !joinCode}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-40"
+                  onClick={() => setShowAuthModal(true)}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white transition-colors"
                 >
-                  {loading ? 'Joining...' : 'Join Session →'}
+                  Sign in
                 </button>
+              )
+            )}
+          </header>
+
+          {/* ── Main content ── */}
+          <main className="relative z-10 flex flex-col items-center justify-center px-6 pt-8 pb-32 text-center flex-1">
+            {/* Hero — logged out only */}
+            {!user && (
+              <>
+                <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 text-sm text-gray-400 mb-8">
+                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                  Real-time sheet music collaboration
+                </div>
+                <h1 className="text-6xl font-bold mb-6 leading-tight">
+                  <span className="bg-gradient-to-b from-white to-gray-500 bg-clip-text text-transparent">
+                    Annotate music.<br />Together.
+                  </span>
+                </h1>
+                <p className="text-gray-400 text-xl mb-16 max-w-lg">
+                  Upload your score, share a link, and annotate in real time — with anyone.
+                </p>
+              </>
+            )}
+
+            {/* Welcome — logged in only */}
+            {user && (
+              <div className="mb-10 text-left w-full max-w-2xl">
+                <h2 className="text-3xl font-bold mb-1.5">
+                  Welcome back{displayName ? `, ${displayName}` : ''} 👋
+                </h2>
+                <p className="text-gray-400 text-sm">Ready to collaborate?</p>
+              </div>
+            )}
+
+            {/* Action cards — always shown */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-2xl">
+              <div className="bg-white/5 hover:bg-white/[0.08] border border-white/10 hover:border-white/20 rounded-3xl p-8 flex flex-col items-start gap-5 transition-all duration-300 text-left">
+                <div className="w-14 h-14 bg-indigo-500/20 border border-indigo-500/30 rounded-2xl flex items-center justify-center text-2xl">🎼</div>
+                <div>
+                  <h2 className="text-xl font-bold mb-2">Start a session</h2>
+                  <p className="text-gray-400 text-sm leading-relaxed">Upload a PDF score and create a room. Share the link with anyone to collaborate.</p>
+                </div>
+                <label className={`w-full py-3 rounded-xl text-sm font-semibold text-center cursor-pointer transition-colors ${loading ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
+                  {loading ? 'Uploading…' : '+ Upload Score'}
+                  <input type="file" accept=".pdf" onChange={handleUpload} className="hidden" disabled={loading} />
+                </label>
+              </div>
+
+              <div className="bg-white/5 hover:bg-white/[0.08] border border-white/10 hover:border-white/20 rounded-3xl p-8 flex flex-col items-start gap-5 transition-all duration-300 text-left">
+                <div className="w-14 h-14 bg-emerald-500/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center text-2xl">🔗</div>
+                <div>
+                  <h2 className="text-xl font-bold mb-2">Join a session</h2>
+                  <p className="text-gray-400 text-sm leading-relaxed">Paste the link or room code you received to join a live session.</p>
+                </div>
+                <div className="w-full flex flex-col gap-2">
+                  <input
+                    type="text"
+                    placeholder="Paste link or room code…"
+                    value={joinCode}
+                    onChange={e => setJoinCode(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && joinCode && joinRoom(joinCode)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-white/30 transition-colors"
+                  />
+                  <button
+                    onClick={() => joinCode && joinRoom(joinCode)}
+                    disabled={loading || !joinCode}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-40"
+                  >
+                    {loading ? 'Joining…' : 'Join Session →'}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </main>
+          </main>
 
-        <footer className="relative z-10 text-center text-gray-600 text-sm pb-8">
-          Built for musicians 🎻
-        </footer>
+          {!user && (
+            <footer className="relative z-10 text-center text-gray-600 text-sm pb-8">
+              Built for musicians 🎻
+            </footer>
+          )}
+        </div>
+
+        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
       </div>
     );
   }
 
   // ── ROOM ──────────────────────────────────────────────────────────────────
+
+  const toolbarProps = {
+    pos: toolbarPos,
+    onPosChange: changeToolbarPos,
+    activeTool,
+    setActiveTool,
+    eraserMode,
+    setEraserMode,
+    color,
+    setColor,
+    strokeWidth,
+    setStrokeWidth,
+    isHost,
+    participantCount,
+    scrollSyncEnabled,
+    handRaised,
+    raisedHands,
+    copied,
+    metronomePanelOpen,
+    currentPage,
+    numPages,
+    canUndo: undoStack.length > 0,
+    onGoHome: goHome,
+    onUndo: undo,
+    onClearAll: clearAll,
+    onToggleScrollSync: toggleScrollSync,
+    onToggleHand: toggleHand,
+    onCopyLink: copyLink,
+    onPageChange: handlePageChange,
+    onToggleMetronome: () => setMetronomePanelOpen(o => !o),
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-[#f5f5f7] text-gray-900">
-      {/* Toolbar */}
-      <div className="flex items-center gap-1.5 px-3 h-14 bg-white/80 backdrop-blur-xl border-b border-black/[0.06] shrink-0">
-        <button
-          onClick={goHome}
-          className="flex items-center gap-2 pl-1 pr-2.5 h-9 rounded-lg text-gray-800 hover:bg-black/[0.04] transition-colors"
-          title="Back to Home"
-        >
-          <Icon name="music" className="w-[18px] h-[18px] text-indigo-600" />
-          <span className="text-sm font-semibold tracking-tight">Unino</span>
-        </button>
+    <div
+      className="flex overflow-hidden h-screen bg-[#f5f5f7] text-gray-900"
+      style={{ flexDirection: toolbarPos === 'top' ? 'column' : 'row' }}
+    >
+      {toolbarPos !== 'right' && <Toolbar key={toolbarPos} {...toolbarProps} />}
 
-        <div className="w-px h-6 bg-black/10 mx-1" />
-
-        {/* Drawing + pointer tools */}
-        <div className="flex items-center gap-0.5">
-          {TOOLS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTool(t.id)}
-              title={t.label}
-              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
-                t.id === 'laser'
-                  ? activeTool === t.id
-                    ? 'bg-red-50 text-red-500'
-                    : 'text-gray-500 hover:bg-red-50 hover:text-red-500'
-                  : activeTool === t.id
-                    ? 'bg-black/[0.07] text-gray-900'
-                    : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-900'
-              }`}
-            >
-              <Icon name={t.id} />
-            </button>
-          ))}
-        </div>
-
-        {activeTool === 'eraser' && (
-          <div className="flex items-center gap-0.5 bg-black/[0.05] rounded-lg p-0.5 ml-1">
-            {(['stroke', 'pixel'] as const).map(m => (
-              <button
-                key={m}
-                onClick={() => setEraserMode(m)}
-                title={m === 'stroke' ? 'Erase whole strokes on click' : 'Erase by dragging (splits pen strokes)'}
-                className={`px-2.5 h-7 rounded-md text-xs font-medium transition-colors ${
-                  eraserMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
-                }`}
-              >
-                {m === 'stroke' ? 'Stroke' : 'Pixel'}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="w-px h-6 bg-black/10 mx-1" />
-
-        {/* Colors */}
-        <div className="flex items-center gap-1.5">
-          {PRESET_COLORS.map(c => (
-            <button key={c} onClick={() => setColor(c)} title={c}
-              className="w-6 h-6 rounded-full flex items-center justify-center transition-transform hover:scale-110">
-              <span className={`w-[18px] h-[18px] rounded-full transition-shadow ${
-                color === c ? 'ring-2 ring-offset-2 ring-offset-white ring-gray-400' : 'ring-1 ring-inset ring-black/10'
-              }`} style={{ backgroundColor: c }} />
-            </button>
-          ))}
-          <label title="Custom color"
-            className="relative w-6 h-6 rounded-full flex items-center justify-center cursor-pointer transition-transform hover:scale-110">
-            <span className={`w-[18px] h-[18px] rounded-full transition-shadow ${
-              isCustomColor ? 'ring-2 ring-offset-2 ring-offset-white ring-gray-400' : 'ring-1 ring-inset ring-black/10'
-            }`} style={{ background: isCustomColor ? color : 'conic-gradient(#ff3b30,#ff9500,#ffcc00,#34c759,#007aff,#af52de,#ff3b30)' }} />
-            <input type="color" value={color} onChange={e => setColor(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" />
-          </label>
-        </div>
-
-        <div className="w-px h-6 bg-black/10 mx-1" />
-
-        {/* Stroke sizes */}
-        <div className="flex items-center gap-0.5">
-          {STROKE_SIZES.map(s => (
-            <button key={s.label} onClick={() => setStrokeWidth(s.w)} title={s.label}
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-                strokeWidth === s.w ? 'bg-black/[0.07]' : 'hover:bg-black/[0.04]'
-              }`}>
-              <span className="rounded-full bg-gray-700" style={{ width: s.dot, height: s.dot }} />
-            </button>
-          ))}
-        </div>
-
-        <div className="w-px h-6 bg-black/10 mx-1" />
-
-        {/* Undo / Clear */}
-        <button onClick={undo} title="Undo"
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-900 transition-colors">
-          <Icon name="undo" />
-        </button>
-        <button onClick={clearAll} title="Clear all"
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500 transition-colors">
-          <Icon name="trash" />
-        </button>
-
-        {/* Page navigation */}
-        {numPages > 1 && (
-          <>
-            <div className="w-px h-6 bg-black/10 mx-1" />
-            <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 0}
-                title="Previous page"
-                className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-900 disabled:opacity-30 transition-colors"
-              >
-                <Icon name="chevronLeft" />
-              </button>
-              <span className="text-xs font-medium text-gray-500 tabular-nums w-14 text-center select-none">
-                {currentPage + 1} / {numPages}
-              </span>
-              <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage >= numPages - 1}
-                title="Next page"
-                className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-900 disabled:opacity-30 transition-colors"
-              >
-                <Icon name="chevronRight" />
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* Role badge + raise hand + share — pushed to the right */}
-        <div className="ml-auto flex items-center gap-2">
-          {isHost ? (
-            <div className="flex items-center gap-1.5">
-              <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
-                <span>👑</span> Host
-              </span>
-              {participantCount > 0 && (
-                <span className="text-xs font-medium text-gray-500 bg-black/[0.04] border border-black/[0.08] rounded-full px-2.5 py-1 select-none">
-                  👥 {participantCount} in room
-                </span>
-              )}
-              <button
-                onClick={() => setScrollSyncEnabled(prev => !prev)}
-                title={scrollSyncEnabled ? 'Scroll sync on — participants follow your scroll' : 'Turn on scroll sync'}
-                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
-                  scrollSyncEnabled
-                    ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
-                    : 'bg-black/[0.04] text-gray-500 hover:bg-black/[0.07]'
-                }`}
-              >
-                <Icon name="sync" className="w-3.5 h-3.5" />
-                {scrollSyncEnabled ? 'Sync ON' : 'Sync'}
-              </button>
-              {raisedHands.length > 0 && (
-                <span className="flex items-center gap-1 text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2 py-1">
-                  ✋ {raisedHands.length}
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-400 font-medium">Participant</span>
-              <button
-                onClick={toggleHand}
-                title={handRaised ? 'Lower hand' : 'Raise hand'}
-                className={`flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-colors ${
-                  handRaised
-                    ? 'bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200'
-                    : 'bg-black/[0.04] text-gray-600 hover:bg-black/[0.07]'
-                }`}
-              >
-                ✋ {handRaised ? 'Lower' : 'Raise Hand'}
-              </button>
-            </div>
-          )}
-
-          <button
-            onClick={copyLink}
-            className={`flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-sm font-medium transition-colors ${
-              copied ? 'bg-green-500 text-white' : 'bg-gray-900 text-white hover:bg-gray-700'
-            }`}
-          >
-            <Icon name={copied ? 'check' : 'link'} className="w-4 h-4" />
-            {copied ? 'Copied' : 'Share'}
-          </button>
-        </div>
-      </div>
-
-      {/* PDF Viewer */}
-      <div className="flex-1 overflow-hidden">
+      <div style={{ flex: '1 1 0', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
         {pdfUrl && (
           <PDFViewer
             pdfUrl={pdfUrl}
@@ -620,6 +551,8 @@ export default function Home() {
         )}
       </div>
 
+      {toolbarPos === 'right' && <Toolbar key={toolbarPos} {...toolbarProps} />}
+
       {/* Toast notifications */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50 pointer-events-none">
         {toasts.map(t => (
@@ -628,6 +561,17 @@ export default function Home() {
           </div>
         ))}
       </div>
+
+      {/* Metronome panel */}
+      {metronomePanelOpen && (
+        <MetronomePanel
+          isHost={isHost}
+          roomId={roomId}
+          remoteState={remoteMetronomeState}
+          onUpdate={handleMetronomeUpdate}
+          onClose={() => setMetronomePanelOpen(false)}
+        />
+      )}
     </div>
   );
 }

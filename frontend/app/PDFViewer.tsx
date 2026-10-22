@@ -13,7 +13,7 @@ interface Props {
   mySocketId: string;
   remoteLasers: { socketId: string; x: number; y: number; page: number }[];
   currentPage: number;
-  onPageChange: (page: number) => void;
+  onPageChange: (page: number, fromScroll?: boolean) => void;
   onNumPagesLoaded: (n: number) => void;
   onAnnotationAdd: (annotation: any) => void;
   onAnnotationDelete: (id: string) => void;
@@ -75,6 +75,7 @@ export default function PDFViewer({
 
   // Page-sync refs (no re-render needed, just coordination).
   const renderedSetRef = useRef(new Set<number>());
+  const renderSessionRef = useRef(0);
   const lastReportedPageRef = useRef(-1);
   const isProgrammaticScrollRef = useRef(false);
   // Set to true when this client's own scroll triggered onPageChange, so the
@@ -95,9 +96,8 @@ export default function PDFViewer({
     let cancelled = false;
     async function load() {
       const pdfjsLib = await import('pdfjs-dist');
-      pdfjsLib.GlobalWorkerOptions.workerSrc =
-        `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-      const doc = await pdfjsLib.getDocument({ url: pdfUrl }).promise;
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+      const doc = await pdfjsLib.getDocument({ url: pdfUrl, wasmUrl: '/' }).promise;
       if (cancelled) return;
       pdfDocRef.current = doc;
       // Fetch all viewports in parallel — just reads PDF structure, no rendering.
@@ -122,19 +122,32 @@ export default function PDFViewer({
   useEffect(() => {
     const doc = pdfDocRef.current;
     if (!doc || !pageMetas.length) return;
-    let cancelled = false;
+
+    // Each effect invocation gets a unique session ID. Async work from a stale
+    // invocation (e.g. React Strict Mode double-invoke) bails out when it sees
+    // the session has advanced — preventing cancelled renders from skipping pages
+    // in the active session's renderedSet.
+    const session = ++renderSessionRef.current;
+    renderedSetRef.current = new Set();
 
     async function renderPage(idx: number) {
+      if (renderSessionRef.current !== session) return;
       if (renderedSetRef.current.has(idx)) return;
       renderedSetRef.current.add(idx);
       try {
         const pg = await doc.getPage(idx + 1);
+        // Re-check after the async getPage — a stale invocation must bail HERE,
+        // before calling pg.render(), otherwise two concurrent render() calls on
+        // the same page proxy cause pdf.js to throw "already pending render task".
+        if (renderSessionRef.current !== session) return;
         const vp = pg.getViewport({ scale: 1.5 });
         const c = document.createElement('canvas');
         c.width = vp.width;
         c.height = vp.height;
         await pg.render({ canvasContext: c.getContext('2d')!, viewport: vp }).promise;
-        if (!cancelled) setPageCanvases(prev => { const n = [...prev]; n[idx] = c; return n; });
+        if (renderSessionRef.current === session) {
+          setPageCanvases(prev => { const n = [...prev]; n[idx] = c; return n; });
+        }
       } catch {
         renderedSetRef.current.delete(idx);
       }
@@ -147,15 +160,15 @@ export default function PDFViewer({
     // Render remaining pages one by one in background with a small delay between each.
     async function renderRemainder() {
       for (let i = eager; i < pageMetas.length; i++) {
-        if (cancelled) break;
+        if (renderSessionRef.current !== session) break;
         await renderPage(i);
-        if (cancelled) break;
+        if (renderSessionRef.current !== session) break;
         await new Promise<void>(resolve => setTimeout(resolve, 80));
       }
     }
     if (pageMetas.length > eager) renderRemainder();
 
-    return () => { cancelled = true; };
+    return () => { renderSessionRef.current++; };
   }, [pageMetas]);
 
   // ── Draw each offscreen canvas to its DOM canvas once rendered ────────
@@ -211,7 +224,7 @@ export default function PDFViewer({
           if (captured !== lastReportedPageRef.current) {
             lastReportedPageRef.current = captured;
             selfNavigatedRef.current = true; // tell scroll effect not to re-scroll
-            onPageChangeRef.current(captured);
+            onPageChangeRef.current(captured, true); // fromScroll=true
           }
         }, 250);
       }
@@ -232,7 +245,7 @@ export default function PDFViewer({
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selected) {
         const ann = annotations.find(a => a.id === selected);
-        if (!ann || !(isHost || !ann.ownerId || ann.ownerId === mySocketId)) return;
+        if (!ann || !canDelete(ann)) return;
         onAnnotationDeleteRef.current(selected);
         setSelected(null);
       }
@@ -247,18 +260,31 @@ export default function PDFViewer({
     const container = containerRef.current;
     if (!container) return;
 
+    let rafId: number | null = null;
+
+    function broadcast() {
+      const max = container!.scrollHeight - container!.clientHeight;
+      if (max <= 0) return;
+      onScrollPositionChangeRef.current(container!.scrollTop / max);
+    }
+
     function handleScroll() {
+      // rAF throttle: one broadcast per display frame (~16ms at 60fps).
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          broadcast();
+          rafId = null;
+        });
+      }
+      // Trailing: one final precise update after scrolling stops.
       if (scrollSyncTimerRef.current) clearTimeout(scrollSyncTimerRef.current);
-      scrollSyncTimerRef.current = setTimeout(() => {
-        const max = container!.scrollHeight - container!.clientHeight;
-        if (max <= 0) return;
-        onScrollPositionChangeRef.current(container!.scrollTop / max);
-      }, 50);
+      scrollSyncTimerRef.current = setTimeout(broadcast, 100);
     }
 
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       container.removeEventListener('scroll', handleScroll);
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
       if (scrollSyncTimerRef.current) clearTimeout(scrollSyncTimerRef.current);
     };
   }, [scrollSyncEnabled, isHost]);
@@ -402,7 +428,7 @@ export default function PDFViewer({
   }
 
   function canDelete(a: any) {
-    return isHost || !a.ownerId || a.ownerId === mySocketId;
+    return isHost || a.ownerId === mySocketId;
   }
 
   // Stroke mode: any annotation the eraser sweeps over is deleted in full.
@@ -456,7 +482,11 @@ export default function PDFViewer({
   function onPointerDown(e: React.PointerEvent, pageIndex: number) {
     if (e.button !== 0) return;
     if (activeTool === 'laser') return;
-    try { (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId); } catch {}
+    // Don't capture for select — capture routes click events to the SVG,
+    // preventing shape onClick handlers from firing.
+    if (activeTool !== 'select') {
+      try { (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId); } catch {}
+    }
 
     if (activeTool === 'eraser') {
       const pos = getPagePos(e, pageIndex);
@@ -467,7 +497,11 @@ export default function PDFViewer({
       else eraseSegment(pageIndex, pos, pos);
       return;
     }
-    if (activeTool === 'select') { setSelected(null); return; }
+    if (activeTool === 'select') {
+      // Only clear selection when clicking the SVG background, not a shape.
+      if (e.target === e.currentTarget) setSelected(null);
+      return;
+    }
     if (activeTool === 'text') {
       const pos = getPagePos(e, pageIndex);
       if (!pos) return;
@@ -564,7 +598,8 @@ export default function PDFViewer({
       }
       return;
     }
-    setSelected(id);
+    const ann = annotations.find(a => a.id === id);
+    if (ann && canDelete(ann)) setSelected(id);
   }
 
   function renderAnnotation(s: any, _pageWidth: number) {

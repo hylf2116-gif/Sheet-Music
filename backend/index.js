@@ -65,7 +65,14 @@ const rooms = loadRooms();
 
 app.post('/create-room', (req, res) => {
   const roomId = uuidv4();
-  rooms[roomId] = { shapes: [], pdfUrl: req.body.pdfUrl, currentPage: 0, hostId: null, raisedHands: [] };
+  rooms[roomId] = {
+    shapes: [],
+    pdfUrl: req.body.pdfUrl,
+    currentPage: 0,
+    hostId: null,
+    raisedHands: [],
+    creatorId: req.body.creatorId ?? null,
+  };
   saveRooms();
   res.json({ roomId });
 });
@@ -97,7 +104,8 @@ io.on('connection', (socket) => {
     currentRoom = roomId;
     const room = rooms[roomId];
     if (!room) return;
-    if (!room.hostId) room.hostId = socket.id;
+    const hostStillConnected = room.hostId && io.sockets.sockets.get(room.hostId);
+    if (!room.hostId || !hostStillConnected) room.hostId = socket.id;
     socket.emit('load-shapes', room.shapes);
     socket.emit('room-info', {
       isHost: socket.id === room.hostId,
@@ -121,7 +129,7 @@ io.on('connection', (socket) => {
     const shape = room.shapes.find(s => s.id === id);
     if (shape) {
       const isHost = socket.id === room.hostId;
-      const isOwner = !shape.ownerId || shape.ownerId === socket.id;
+      const isOwner = shape.ownerId === socket.id;
       if (!isHost && !isOwner) return;
       room.shapes = room.shapes.filter(s => s.id !== id);
       saveRooms();
@@ -136,7 +144,7 @@ io.on('connection', (socket) => {
     const shape = room.shapes.find(s => s.id === id);
     if (shape) {
       const isHost = socket.id === room.hostId;
-      const isOwner = !shape.ownerId || shape.ownerId === socket.id;
+      const isOwner = shape.ownerId === socket.id;
       if (!isHost && !isOwner) return;
       room.shapes = room.shapes.filter(s => s.id !== id);
       saveRooms();
@@ -172,6 +180,12 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.hostId) return;
     socket.to(roomId).emit('scroll-sync', ratio);
+  });
+
+  socket.on('metronome-update', ({ roomId, state }) => {
+    const room = rooms[roomId];
+    if (!room || socket.id !== room.hostId) return;
+    socket.to(roomId).emit('metronome-update', state);
   });
 
   // Laser pointer — no storage, pure broadcast.

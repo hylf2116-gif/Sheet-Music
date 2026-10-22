@@ -1,1 +1,16 @@
 node_modules/
+
+# env files — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# backend runtime data
+backend/data/
+
+# Next.js build output
+.next/
+out/
+
+# OS
+.DS_Store
