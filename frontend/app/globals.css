@@ -29,3 +29,192 @@ body {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* ── Theme tokens ───────────────────────────────────────────────────────────── */
+
+:root {
+  --app-bg:         #0a0a0f;
+  --sidebar-bg:     #0d0d15;
+  --sidebar-border: rgba(255,255,255,0.06);
+  --modal-bg:       #111118;
+  --panel-bg:       #0d0d18;
+  --panel-border:   rgba(255,255,255,0.07);
+  --surface:        rgba(255,255,255,0.04);
+  --surface-hover:  rgba(255,255,255,0.07);
+  --surface-strong: rgba(255,255,255,0.08);
+  --border:         rgba(255,255,255,0.07);
+  --border-md:      rgba(255,255,255,0.10);
+  --t:              #ffffff;
+  --t2:             #9ca3af;
+  --t3:             #6b7280;
+  --t4:             #4b5563;
+}
+
+[data-theme="light"] {
+  --app-bg:         #f5f5f7;
+  --sidebar-bg:     #eeeef4;
+  --sidebar-border: rgba(0,0,0,0.06);
+  --modal-bg:       #ffffff;
+  --panel-bg:       #f9f9fb;
+  --panel-border:   rgba(0,0,0,0.07);
+  --surface:        #ffffff;
+  --surface-hover:  rgba(0,0,0,0.04);
+  --surface-strong: rgba(0,0,0,0.06);
+  --border:         rgba(0,0,0,0.07);
+  --border-md:      rgba(0,0,0,0.10);
+  --t:              #1d1d1f;
+  --t2:             #6e6e73;
+  --t3:             #8e8e93;
+  --t4:             #aeaeb2;
+}
+
+/* ── Adaptive text utilities ───────────────────────────────────────────────── */
+
+.u-text   { color: var(--t);  }
+.u-text2  { color: var(--t2); }
+.u-text3  { color: var(--t3); }
+.u-text4  { color: var(--t4); }
+
+/* ── Light theme scoped overrides ──────────────────────────────────────────── */
+
+/* Text inside unino-page wrapper */
+[data-theme="light"] .unino-page .text-white      { color: #1d1d1f; }
+[data-theme="light"] .unino-page .text-gray-100   { color: #2c2c2e; }
+[data-theme="light"] .unino-page .text-gray-200   { color: #3c3c43; }
+[data-theme="light"] .unino-page .text-gray-300   { color: #3c3c43; }
+[data-theme="light"] .unino-page .text-gray-400   { color: #6e6e73; }
+[data-theme="light"] .unino-page .text-gray-500   { color: #8e8e93; }
+[data-theme="light"] .unino-page .text-gray-600   { color: #aeaeb2; }
+[data-theme="light"] .unino-page .text-gray-700   { color: #c7c7cc; }
+
+/* Hero gradient changes direction in light mode */
+[data-theme="light"] .unino-hero-gradient {
+  background-image: linear-gradient(to bottom, #1d1d1f 0%, #3c3c43 100%);
+}
+
+/* Text inside modals/panels */
+[data-theme="light"] .unino-modal .text-white    { color: #1d1d1f; }
+[data-theme="light"] .unino-modal .text-gray-300 { color: #3c3c43; }
+[data-theme="light"] .unino-modal .text-gray-400 { color: #6e6e73; }
+[data-theme="light"] .unino-modal .text-gray-500 { color: #8e8e93; }
+[data-theme="light"] .unino-modal .text-gray-600 { color: #aeaeb2; }
+[data-theme="light"] .unino-modal .text-gray-700 { color: #c7c7cc; }
+[data-theme="light"] .unino-modal input,
+[data-theme="light"] .unino-modal textarea        { color: #1d1d1f; }
+[data-theme="light"] .unino-modal input::placeholder,
+[data-theme="light"] .unino-modal textarea::placeholder { color: #8e8e93; }
+
+/* Sidebar text */
+[data-theme="light"] .unino-sidebar .text-gray-300  { color: #3c3c43; }
+[data-theme="light"] .unino-sidebar .text-gray-400  { color: #6e6e73; }
+[data-theme="light"] .unino-sidebar .text-gray-600  { color: #8e8e93; }
+[data-theme="light"] .unino-sidebar .text-gray-700  { color: #aeaeb2; }
+
+/* ── Additional tokens ──────────────────────────────────────────────────────── */
+
+:root {
+  --input-bg:         rgba(255,255,255,0.05);
+  --input-border:     rgba(255,255,255,0.10);
+  --divider:          rgba(255,255,255,0.06);
+  /* Always-dark instrument panels (Tuner, Metronome, PitchTrace) */
+  --float-bg:         #141418;
+  --float-bg-soft:    rgba(14,14,20,0.96);
+  --float-border:     rgba(255,255,255,0.08);
+}
+
+[data-theme="light"] {
+  --input-bg:         rgba(0,0,0,0.05);
+  --input-border:     rgba(0,0,0,0.12);
+  --divider:          rgba(0,0,0,0.07);
+  /* Instrument panels are intentionally always dark */
+  --float-bg:         #141418;
+  --float-bg-soft:    rgba(14,14,20,0.96);
+  --float-border:     rgba(255,255,255,0.08);
+}
+
+/* ── New utility classes ────────────────────────────────────────────────────── */
+
+.u-input {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--t);
+}
+.u-input::placeholder { color: var(--t3); }
+
+.u-divider { background: var(--divider); }
+.u-hover-surface:hover { background: var(--surface-hover); }
+
+/* ── Room panel (ChatPanel, ThumbnailPanel) light-mode text overrides ───────── */
+
+[data-theme="light"] .unino-panel .text-white        { color: var(--t); }
+[data-theme="light"] .unino-panel .text-gray-100     { color: #1c1c1e; }
+[data-theme="light"] .unino-panel .text-gray-200     { color: #2c2c2e; }
+[data-theme="light"] .unino-panel .text-gray-300     { color: #3c3c43; }
+[data-theme="light"] .unino-panel .text-gray-400     { color: #6e6e73; }
+[data-theme="light"] .unino-panel .text-gray-500     { color: #8e8e93; }
+[data-theme="light"] .unino-panel .text-gray-600     { color: #aeaeb2; }
+[data-theme="light"] .unino-panel .text-gray-700     { color: #c7c7cc; }
+[data-theme="light"] .unino-panel input              { color: var(--t); background: var(--input-bg); }
+[data-theme="light"] .unino-panel input::placeholder { color: var(--t3); }
+
+/* ── Extended unino-modal light-mode overrides ──────────────────────────────── */
+
+/* Additional text */
+[data-theme="light"] .unino-modal .text-gray-200          { color: #2c2c2e; }
+
+/* Semi-transparent white backgrounds → black-alpha equivalents */
+[data-theme="light"] .unino-modal .bg-white\/5            { background-color: rgba(0,0,0,0.04); }
+[data-theme="light"] .unino-modal .bg-white\/\[0\.03\]    { background-color: rgba(0,0,0,0.02); }
+[data-theme="light"] .unino-modal .bg-white\/\[0\.06\]    { background-color: rgba(0,0,0,0.05); }
+[data-theme="light"] .unino-modal .bg-white\/\[0\.07\]    { background-color: rgba(0,0,0,0.06); }
+[data-theme="light"] .unino-modal .bg-white\/10           { background-color: rgba(0,0,0,0.07); }
+
+/* White-opacity borders → black-alpha equivalents */
+[data-theme="light"] .unino-modal .border-white\/5         { border-color: rgba(0,0,0,0.04); }
+[data-theme="light"] .unino-modal .border-white\/8         { border-color: rgba(0,0,0,0.07); }
+[data-theme="light"] .unino-modal .border-white\/\[0\.06\] { border-color: rgba(0,0,0,0.06); }
+[data-theme="light"] .unino-modal .border-white\/\[0\.08\] { border-color: rgba(0,0,0,0.07); }
+[data-theme="light"] .unino-modal .border-white\/10        { border-color: rgba(0,0,0,0.10); }
+
+/* Hover background overrides */
+[data-theme="light"] .unino-modal .hover\:bg-white\/5:hover         { background-color: rgba(0,0,0,0.04); }
+[data-theme="light"] .unino-modal .hover\:bg-white\/10:hover        { background-color: rgba(0,0,0,0.07); }
+[data-theme="light"] .unino-modal .hover\:bg-white\/\[0\.06\]:hover { background-color: rgba(0,0,0,0.05); }
+[data-theme="light"] .unino-modal .hover\:bg-white\/\[0\.07\]:hover { background-color: rgba(0,0,0,0.06); }
+
+/* Hover text overrides */
+[data-theme="light"] .unino-modal .hover\:text-white:hover     { color: var(--t); }
+[data-theme="light"] .unino-modal .hover\:text-gray-300:hover  { color: #3c3c43; }
+[data-theme="light"] .unino-modal .hover\:text-gray-200:hover  { color: #2c2c2e; }
+
+/* ── Primary accent buttons: always white text on colored backgrounds ────────
+   These selectors have equal specificity to .text-white overrides above;
+   placing them after ensures they win and restore white on indigo/emerald/red. */
+
+[data-theme="light"] .unino-modal .bg-indigo-600,
+[data-theme="light"] .unino-modal .bg-indigo-500,
+[data-theme="light"] .unino-modal .bg-emerald-600,
+[data-theme="light"] .unino-modal .bg-emerald-500,
+[data-theme="light"] .unino-modal .bg-red-600,
+[data-theme="light"] .unino-modal .bg-red-500   { color: white; }
+
+[data-theme="light"] .unino-page  .bg-indigo-600,
+[data-theme="light"] .unino-page  .bg-indigo-500,
+[data-theme="light"] .unino-page  .bg-emerald-600,
+[data-theme="light"] .unino-page  .bg-emerald-500 { color: white; }
+
+[data-theme="light"] .unino-panel .bg-indigo-600,
+[data-theme="light"] .unino-panel .bg-indigo-500  { color: white; }
+
+/* ── Error text: ≥4.5:1 contrast in light mode ──────────────────────────────
+   red-400 (#f87171) on white/near-white ≈ 3.5:1 — below threshold.
+   red-700 (#b91c1c) on white ≈ 5.3:1; on the light-pink error box ≈ 5.3:1. */
+
+[data-theme="light"] .unino-modal .text-red-400       { color: #b91c1c; }
+[data-theme="light"] .unino-modal .text-red-300       { color: #991b1b; }
+[data-theme="light"] .unino-modal .text-red-500\/70   { color: #b91c1c; }

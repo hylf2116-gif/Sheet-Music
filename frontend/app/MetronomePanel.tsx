@@ -703,7 +703,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
   if (minimized) {
     return (
       <div className="fixed z-50 rounded-2xl shadow-2xl flex items-center gap-2.5 px-4 py-2.5"
-        style={{ left: panelPos.x < 0 ? 'auto' : panelPos.x, top: panelPos.y < 0 ? 'auto' : panelPos.y, right: panelPos.x < 0 ? 24 : 'auto', bottom: panelPos.x < 0 ? 80 : 'auto', background: '#141418', border: '1px solid rgba(255,255,255,0.08)' }}>
+        style={{ left: panelPos.x < 0 ? 'auto' : panelPos.x, top: panelPos.y < 0 ? 'auto' : panelPos.y, right: panelPos.x < 0 ? 24 : 'auto', bottom: panelPos.x < 0 ? 80 : 'auto', background: 'var(--float-bg)', border: '1px solid var(--float-border)' }}>
         <span className="text-white font-bold text-xl tabular-nums">{bpm}</span>
         <span className="text-xs text-gray-500">BPM</span>
         {isHost && (
@@ -736,7 +736,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
         right: panelPos.x < 0 ? 24 : 'auto',
         bottom: panelPos.x < 0 ? 80 : 'auto',
         width: panelSize.w, height: panelSize.h,
-        background: '#141418', border: '1px solid rgba(255,255,255,0.08)',
+        background: 'var(--float-bg)', border: '1px solid var(--float-border)',
         cursor: isDragging ? 'grabbing' : 'default',
         userSelect: isDragging ? 'none' : undefined,
       }}>
@@ -906,7 +906,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
                 </button>
                 {showTempoDD && (
                   <div className="absolute bottom-full mb-1 left-0 right-0 z-20 rounded-xl overflow-hidden"
-                    style={{ background: '#1e1e26', border: '1px solid rgba(255,255,255,0.1)', maxHeight: 220, overflowY: 'auto' }}>
+                    style={{ background: 'var(--float-bg)', border: '1px solid var(--float-border)', maxHeight: 220, overflowY: 'auto' }}>
                     {TEMPO_MARKINGS.map(t => (
                       <button key={t.name}
                         onClick={() => { if (!isHost) return; changeBpm(t.bpm); setShowTempoDD(false); }}

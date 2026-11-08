@@ -36,6 +36,14 @@ export interface ToolbarProps {
   onCopyLink: () => void;
   onPageChange: (page: number) => void;
   onToggleMetronome: () => void;
+  onExportPDF: () => void;
+  chatOpen: boolean;
+  chatUnread: number;
+  onToggleChat: () => void;
+  thumbsOpen: boolean;
+  onToggleThumbs: () => void;
+  bookmarkActive: boolean;
+  onToggleBookmark: () => void;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -82,6 +90,11 @@ const ICONS: Record<string, React.ReactNode> = {
   layoutT:   (<><rect x="3" y="3" width="18" height="5" rx="1.5" /><rect x="3" y="11" width="18" height="10" rx="1.5" /></>),
   layoutL:   (<><rect x="3" y="3" width="6" height="18" rx="1.5" /><rect x="12" y="3" width="9" height="18" rx="1.5" /></>),
   layoutR:   (<><rect x="15" y="3" width="6" height="18" rx="1.5" /><rect x="3" y="3" width="9" height="18" rx="1.5" /></>),
+  download:  (<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>),
+  chat:         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  pages:        (<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>),
+  bookmark:     <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />,
+  bookmarkFill: <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" fill="currentColor" />,
 };
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
@@ -275,110 +288,96 @@ export default function Toolbar(p: ToolbarProps) {
 
   if (p.pos === 'top') {
     return (
-      <div className="flex items-center select-none"
-        style={{ height: 56, flexShrink: 0, width: '100%', background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(20px) saturate(1.8)', borderBottom: '1px solid rgba(0,0,0,0.06)', animation: 'tbFadeIn 0.18s ease' }}>
+      <div className="flex flex-col select-none shrink-0"
+        style={{ width: '100%', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px) saturate(1.8)', borderBottom: '1px solid rgba(0,0,0,0.06)', animation: 'tbFadeIn 0.18s ease' }}>
 
-        {/* LEFT: tools strip — compresses when narrow so the right side is never pushed off */}
-        <div className="flex items-center gap-0.5 px-3 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
-          <button onClick={p.onGoHome}
-            className="flex items-center gap-2 pl-1 pr-3 h-9 rounded-lg text-gray-800 hover:bg-black/[0.04] transition-colors shrink-0">
-            <Icon name="music" size={17} />
-            <span className="text-sm font-semibold tracking-tight text-indigo-600">Unino</span>
-          </button>
+        {/* ── Main bar ─────────────────────────────────────────────────── */}
+        <div className="flex items-center" style={{ height: 52 }}>
 
-          <Divider />
+          {/* LEFT: logo + annotation tools + undo/clear + page nav */}
+          <div className="flex items-center gap-0.5 px-3 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
+            <button onClick={p.onGoHome}
+              className="flex items-center gap-2 pl-1 pr-3 h-9 rounded-lg text-gray-800 hover:bg-black/[0.04] transition-colors shrink-0">
+              <Icon name="music" size={17} />
+              <span className="text-sm font-semibold tracking-tight text-indigo-600">Unino</span>
+            </button>
 
-          <div className="flex items-center gap-0.5 shrink-0">
-            {ANNOTATE_TOOLS.map(t => <ToolBtn key={t.id} id={t.id} label={t.label} />)}
+            <Divider />
+
+            <div className="flex items-center gap-0.5 shrink-0">
+              {ANNOTATE_TOOLS.map(t => <ToolBtn key={t.id} id={t.id} label={t.label} />)}
+            </div>
+
+            {isAnnotate && <ContextPanel />}
+
+            <Divider />
+
+            <button onClick={p.onUndo} disabled={!p.canUndo} title="Undo"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 disabled:opacity-30 transition-colors shrink-0">
+              <Icon name="undo" size={16} />
+            </button>
+            <button onClick={p.onClearAll} title="Clear all"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500 transition-colors shrink-0">
+              <Icon name="trash" size={16} />
+            </button>
+
+            {p.numPages > 1 && (
+              <>
+                <Divider />
+                <button onClick={() => p.onPageChange(p.currentPage - 1)} disabled={p.currentPage === 0}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] disabled:opacity-30 transition-colors shrink-0">
+                  <Icon name="chevronL" />
+                </button>
+                <span className="text-xs font-medium text-gray-500 tabular-nums w-11 text-center select-none shrink-0">
+                  {p.currentPage + 1} / {p.numPages}
+                </span>
+                <button onClick={() => p.onPageChange(p.currentPage + 1)} disabled={p.currentPage >= p.numPages - 1}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] disabled:opacity-30 transition-colors shrink-0">
+                  <Icon name="chevronR" />
+                </button>
+              </>
+            )}
           </div>
 
-          {isAnnotate && <ContextPanel />}
-
-          <Divider />
-
-          <button onClick={p.onUndo} disabled={!p.canUndo} title="Undo"
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 disabled:opacity-30 transition-colors shrink-0">
-            <Icon name="undo" />
-          </button>
-          <button onClick={p.onClearAll} title="Clear all"
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500 transition-colors shrink-0">
-            <Icon name="trash" />
-          </button>
-
-          {p.numPages > 1 && (
-            <>
-              <Divider />
-              <button onClick={() => p.onPageChange(p.currentPage - 1)} disabled={p.currentPage === 0}
-                className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] disabled:opacity-30 transition-colors shrink-0">
-                <Icon name="chevronL" />
-              </button>
-              <span className="text-xs font-medium text-gray-500 tabular-nums w-12 text-center select-none shrink-0">
-                {p.currentPage + 1} / {p.numPages}
-              </span>
-              <button onClick={() => p.onPageChange(p.currentPage + 1)} disabled={p.currentPage >= p.numPages - 1}
-                className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] disabled:opacity-30 transition-colors shrink-0">
-                <Icon name="chevronR" />
-              </button>
-            </>
-          )}
-
-          <Divider />
-
-          <button onClick={p.onToggleMetronome} title="Metronome"
-            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
-              p.metronomePanelOpen ? 'bg-indigo-100 text-indigo-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
-            }`}>
-            <Icon name="metronome" />
-          </button>
-        </div>
-
-        {/* RIGHT: room status — always visible, never shrinks */}
-        <div className="flex items-center gap-1.5 px-3 shrink-0">
-          {p.isHost ? (
-            <>
-              <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-100 rounded-full px-2.5 py-1 select-none">
-                👑 Host
-              </span>
-              <span className="text-xs font-medium text-gray-500 bg-black/[0.03] border border-black/[0.07] rounded-full px-2.5 py-1 select-none">
-                👥 {p.participantCount} in room
-              </span>
-              <button onClick={p.onToggleScrollSync}
-                title={p.scrollSyncEnabled ? 'Scroll sync on' : 'Turn on scroll sync'}
-                className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${
-                  p.scrollSyncEnabled ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' : 'bg-black/[0.03] text-gray-500 hover:bg-black/[0.06]'
-                }`}>
-                <Icon name="sync" size={13} />
-                Sync
-              </button>
-              {p.raisedHands.length > 0 && (
-                <span className="text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2 py-1 select-none">
-                  ✋ {p.raisedHands.length}
-                </span>
-              )}
-            </>
-          ) : (
-            <>
-              <span className="text-xs text-gray-400 font-medium select-none">Participant</span>
+          {/* RIGHT: minimal room status + share + pos menu */}
+          <div className="flex items-center gap-1 px-3 shrink-0">
+            {p.isHost ? (
+              <>
+                <span className="text-[11px] font-semibold text-amber-600 select-none px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-100 shrink-0">👑</span>
+                <span className="text-[11px] text-gray-400 select-none tabular-nums shrink-0">{p.participantCount}</span>
+                <button onClick={p.onToggleScrollSync} title={p.scrollSyncEnabled ? 'Scroll sync on' : 'Scroll sync off'}
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
+                    p.scrollSyncEnabled ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-gray-700 hover:bg-black/[0.04]'
+                  }`}>
+                  <Icon name="sync" size={13} />
+                </button>
+                {p.raisedHands.length > 0 && (
+                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded-full px-1.5 py-0.5 select-none shrink-0">
+                    ✋{p.raisedHands.length}
+                  </span>
+                )}
+              </>
+            ) : (
               <button onClick={p.onToggleHand}
-                className={`flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-colors ${
-                  p.handRaised ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-black/[0.04] text-gray-600 hover:bg-black/[0.07]'
+                className={`flex items-center gap-1 h-7 px-2 rounded-lg text-[11px] font-medium transition-colors shrink-0 ${
+                  p.handRaised ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-700'
                 }`}>
-                ✋ {p.handRaised ? 'Lower' : 'Raise Hand'}
+                ✋ {p.handRaised ? 'Lower' : 'Raise hand'}
               </button>
-            </>
-          )}
+            )}
 
-          <div className="w-px h-5 bg-black/[0.08] mx-0.5" />
+            <div className="w-px h-4 bg-black/[0.08] mx-1 shrink-0" />
 
-          <button onClick={p.onCopyLink}
-            className={`flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-sm font-medium transition-colors ${
-              p.copied ? 'bg-green-500 text-white' : 'bg-gray-900 text-white hover:bg-gray-700'
-            }`}>
-            <Icon name={p.copied ? 'check' : 'link'} size={15} />
-            {p.copied ? 'Copied' : 'Share'}
-          </button>
+            <button onClick={p.onCopyLink}
+              className={`flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-medium transition-colors shrink-0 ${
+                p.copied ? 'bg-green-500 text-white' : 'bg-gray-900 text-white hover:bg-gray-700'
+              }`}>
+              <Icon name={p.copied ? 'check' : 'link'} size={14} />
+              {p.copied ? 'Copied' : 'Share'}
+            </button>
 
-          <PosMenu />
+            <PosMenu />
+          </div>
         </div>
       </div>
     );
@@ -465,6 +464,22 @@ export default function Toolbar(p: ToolbarProps) {
                 <span className="text-xs font-medium">Scroll sync {p.scrollSyncEnabled ? 'ON' : 'OFF'}</span>
               </button>
             )}
+            {/* Thumbnails */}
+            <button onClick={p.onToggleThumbs}
+              className={`flex items-center gap-2.5 w-full px-2 py-2 rounded-xl text-sm transition-colors ${
+                p.thumbsOpen ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
+              }`}>
+              <Icon name="pages" size={15} />
+              <span className="text-xs font-medium">Thumbnails</span>
+            </button>
+            {/* Bookmark current page */}
+            <button onClick={p.onToggleBookmark}
+              className={`flex items-center gap-2.5 w-full px-2 py-2 rounded-xl text-sm transition-colors ${
+                p.bookmarkActive ? 'bg-amber-50 text-amber-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
+              }`}>
+              <Icon name={p.bookmarkActive ? 'bookmarkFill' : 'bookmark'} size={15} />
+              <span className="text-xs font-medium">{p.bookmarkActive ? 'Bookmarked' : 'Bookmark page'}</span>
+            </button>
           </div>
         )}
 
@@ -523,6 +538,25 @@ export default function Toolbar(p: ToolbarProps) {
               <Icon name="metronome" size={15} />
               <span className="text-xs font-medium">Metronome</span>
             </button>
+            <button onClick={p.onExportPDF}
+              className="flex items-center gap-2.5 w-full px-2 py-2 rounded-xl text-sm text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 transition-colors">
+              <Icon name="download" size={15} />
+              <span className="text-xs font-medium">Export PDF</span>
+            </button>
+            <div className="relative">
+              <button onClick={p.onToggleChat}
+                className={`flex items-center gap-2.5 w-full px-2 py-2 rounded-xl text-sm transition-colors ${
+                  p.chatOpen ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
+                }`}>
+                <Icon name="chat" size={15} />
+                <span className="text-xs font-medium">Chat</span>
+              </button>
+              {p.chatUnread > 0 && !p.chatOpen && (
+                <span className="absolute top-1.5 right-2 w-4 h-4 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center leading-none pointer-events-none">
+                  {p.chatUnread > 9 ? '9+' : p.chatUnread}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -27,6 +27,7 @@ function loadRooms() {
       for (const id of Object.keys(data)) {
         data[id].hostId = null;
         data[id].raisedHands = [];
+        data[id].messages = [];   // chat history is session-only, not persisted
         if (data[id].currentPage === undefined) data[id].currentPage = 0;
       }
       return data;
@@ -67,7 +68,9 @@ app.post('/create-room', (req, res) => {
   const roomId = uuidv4();
   rooms[roomId] = {
     shapes: [],
+    messages: [],
     pdfUrl: req.body.pdfUrl,
+    scoreName: req.body.scoreName ?? 'Untitled Score',
     currentPage: 0,
     hostId: null,
     raisedHands: [],
@@ -80,13 +83,18 @@ app.post('/create-room', (req, res) => {
 app.post('/upload', upload.single('pdf'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-  res.json({ url: fileUrl, filename: req.file.filename });
+  const scoreName = req.file.originalname.replace(/\.pdf$/i, '').trim() || 'Untitled Score';
+  res.json({ url: fileUrl, filename: req.file.filename, scoreName });
 });
 
 app.get('/room/:roomId', (req, res) => {
   const room = rooms[req.params.roomId];
   if (!room) return res.status(404).json({ error: 'Room not found' });
-  res.json({ pdfUrl: room.pdfUrl, currentPage: room.currentPage ?? 0 });
+  res.json({
+    pdfUrl: room.pdfUrl,
+    scoreName: room.scoreName ?? 'Untitled Score',
+    currentPage: room.currentPage ?? 0,
+  });
 });
 
 function emitMemberCount(roomId) {
@@ -107,6 +115,7 @@ io.on('connection', (socket) => {
     const hostStillConnected = room.hostId && io.sockets.sockets.get(room.hostId);
     if (!room.hostId || !hostStillConnected) room.hostId = socket.id;
     socket.emit('load-shapes', room.shapes);
+    socket.emit('chat-history', room.messages || []);
     socket.emit('room-info', {
       isHost: socket.id === room.hostId,
       raisedHands: room.raisedHands,
@@ -208,6 +217,52 @@ io.on('connection', (socket) => {
     if (!room) return;
     room.raisedHands = room.raisedHands.filter(id => id !== socket.id);
     io.to(roomId).emit('lower-hand', { socketId: socket.id });
+  });
+
+  // Pitch detection — pure relay, never stored.
+  socket.on('pitch-update', ({ roomId, senderName, note, cents, freq, midi, timestamp }) => {
+    if (!rooms[roomId]) return;
+    if (typeof freq !== 'number' || typeof cents !== 'number') return;
+    socket.to(roomId).emit('pitch-update', {
+      senderId: socket.id,
+      senderName: (senderName || 'Guest').slice(0, 64),
+      note: String(note || '').slice(0, 8),
+      cents: Math.round(Number(cents)),
+      freq: Math.round(Number(freq) * 100) / 100,
+      midi: typeof midi === 'number' ? midi : 0,
+      timestamp: typeof timestamp === 'number' ? timestamp : Date.now(),
+    });
+  });
+
+  socket.on('bookmark-add', ({ roomId, page }) => {
+    const room = rooms[roomId];
+    if (!room || typeof page !== 'number') return;
+    socket.to(roomId).emit('bookmark-add', { page });
+  });
+
+  socket.on('bookmark-remove', ({ roomId, page }) => {
+    const room = rooms[roomId];
+    if (!room || typeof page !== 'number') return;
+    socket.to(roomId).emit('bookmark-remove', { page });
+  });
+
+  socket.on('chat-message', ({ roomId, text, senderName }) => {
+    const room = rooms[roomId];
+    if (!room || typeof text !== 'string') return;
+    const trimmed = text.trim().slice(0, 500);
+    if (!trimmed) return;
+    const message = {
+      id: uuidv4(),
+      senderId: socket.id,
+      senderName: (senderName || 'Guest').slice(0, 64),
+      text: trimmed,
+      timestamp: new Date().toISOString(),
+      isHost: socket.id === room.hostId,
+    };
+    if (!room.messages) room.messages = [];
+    room.messages.push(message);
+    if (room.messages.length > 100) room.messages.shift();
+    io.to(roomId).emit('chat-message', message);
   });
 
   socket.on('leave-room', (roomId) => {
