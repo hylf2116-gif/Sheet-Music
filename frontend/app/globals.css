@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
+/* ── Next.js / Geist defaults ───────────────────────────────────────────────── */
+
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #1c1c1e;
 }
 
 @theme inline {
@@ -14,16 +16,22 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #141412;
+    --foreground: #f5f5f0;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+               Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* ── Keyframes ──────────────────────────────────────────────────────────────── */
 
 @keyframes tbFadeIn {
   from { opacity: 0; }
@@ -35,144 +43,213 @@ body {
   to   { transform: translateX(0);    opacity: 1; }
 }
 
-/* ── Theme tokens ───────────────────────────────────────────────────────────── */
+/* ── Stone design tokens ────────────────────────────────────────────────────── */
+/*
+ * Scale reference
+ * ───────────────
+ * Type:    11 · 12 · 13 · 14 (base) · 15 · 16 · 20 · 28 · 40 px
+ * Space:   4-pt grid  (4 · 8 · 12 · 16 · 20 · 24 · 32 · 48 · 64 · 96)
+ * Radius:  xs 4 · sm 6 · md 10 · lg 14 · xl 18 · full 9999
+ * Motion:  fast 100ms · base 150ms · slow 200ms · ease out-cubic
+ */
 
 :root {
-  --app-bg:         #0a0a0f;
-  --sidebar-bg:     #0d0d15;
-  --sidebar-border: rgba(255,255,255,0.06);
-  --modal-bg:       #111118;
-  --panel-bg:       #0d0d18;
+  /* ── Radius ── */
+  --r-xs:   4px;
+  --r-sm:   6px;
+  --r-md:   10px;
+  --r-lg:   14px;
+  --r-xl:   18px;
+  --r-full: 9999px;
+
+  /* ── Accent (Stone indigo — Apple system indigo) ── */
+  --accent:       #5E5CE6;
+  --accent-hover: #4A48C8;
+
+  /* ── Motion ── */
+  --dur-fast: 100ms;
+  --dur:      150ms;
+  --dur-slow: 200ms;
+  --ease:     cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* ── Dark-mode surfaces (default; overridden by [data-theme="light"]) ── */
+  --app-bg:         #141412;
+  --sidebar-bg:     #1A1A18;
+  --sidebar-border: rgba(255,255,255,0.07);
+  --modal-bg:       #1E1E1C;
+  --panel-bg:       #1A1A18;
   --panel-border:   rgba(255,255,255,0.07);
-  --surface:        rgba(255,255,255,0.04);
-  --surface-hover:  rgba(255,255,255,0.07);
-  --surface-strong: rgba(255,255,255,0.08);
-  --border:         rgba(255,255,255,0.07);
-  --border-md:      rgba(255,255,255,0.10);
-  --t:              #ffffff;
-  --t2:             #9ca3af;
-  --t3:             #6b7280;
-  --t4:             #4b5563;
+  --surface:        rgba(255,255,255,0.05);
+  --surface-hover:  rgba(255,255,255,0.08);
+  --surface-strong: rgba(255,255,255,0.10);
+  --border:         rgba(255,255,255,0.08);
+  --border-md:      rgba(255,255,255,0.12);
+
+  /* ── Dark-mode text ── */
+  --t:  #F5F5F0;
+  --t2: #8E8E8A;
+  --t3: #5E5E5A;
+  --t4: #3E3E3A;
+
+  /* ── Dark-mode accent tints ── */
+  --accent-fg: #8785FF;          /* use for text/icons on dark bg */
+  --accent-bg: rgba(94,92,230,0.12);
+
+  /* ── Dark-mode inputs & dividers ── */
+  --input-bg:     rgba(255,255,255,0.05);
+  --input-border: rgba(255,255,255,0.10);
+  --divider:      rgba(255,255,255,0.07);
+
+  /* ── Dark-mode shadows (more prominent so depth reads) ── */
+  --shadow-xs: 0 1px 2px  rgba(0,0,0,0.25);
+  --shadow-sm: 0 2px 6px  rgba(0,0,0,0.30), 0 1px 2px rgba(0,0,0,0.20);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.38), 0 1px 4px rgba(0,0,0,0.22);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.48), 0 2px 8px rgba(0,0,0,0.30);
+
+  /* ── Always-dark instrument panels (Tuner, Metronome, PitchTrace) ── */
+  --float-bg:      #141412;
+  --float-bg-soft: rgba(20,20,18,0.96);
+  --float-border:  rgba(255,255,255,0.08);
 }
+
+/* ── Light-mode overrides ───────────────────────────────────────────────────── */
 
 [data-theme="light"] {
-  --app-bg:         #f5f5f7;
-  --sidebar-bg:     #eeeef4;
-  --sidebar-border: rgba(0,0,0,0.06);
-  --modal-bg:       #ffffff;
-  --panel-bg:       #f9f9fb;
+  --app-bg:         #F9F9F9;
+  --sidebar-bg:     #F2F2F0;
+  --sidebar-border: rgba(0,0,0,0.07);
+  --modal-bg:       #FFFFFF;
+  --panel-bg:       #FAFAFA;
   --panel-border:   rgba(0,0,0,0.07);
-  --surface:        #ffffff;
-  --surface-hover:  rgba(0,0,0,0.04);
-  --surface-strong: rgba(0,0,0,0.06);
-  --border:         rgba(0,0,0,0.07);
-  --border-md:      rgba(0,0,0,0.10);
-  --t:              #1d1d1f;
-  --t2:             #6e6e73;
-  --t3:             #8e8e93;
-  --t4:             #aeaeb2;
+  --surface:        rgba(0,0,0,0.03);
+  --surface-hover:  rgba(0,0,0,0.05);
+  --surface-strong: rgba(0,0,0,0.07);
+  --border:         rgba(0,0,0,0.08);
+  --border-md:      rgba(0,0,0,0.11);
+
+  --t:  #1C1C1E;
+  --t2: #6C6C70;
+  --t3: #AEAEB2;
+  --t4: #D1D1D6;
+
+  --accent-fg: #5E5CE6;
+  --accent-bg: rgba(94,92,230,0.09);
+
+  --input-bg:     rgba(0,0,0,0.04);
+  --input-border: rgba(0,0,0,0.11);
+  --divider:      rgba(0,0,0,0.07);
+
+  /* Light-mode shadows (subtle — borders carry structure) */
+  --shadow-xs: 0 1px 2px  rgba(0,0,0,0.05);
+  --shadow-sm: 0 1px 3px  rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 2px 10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-lg: 0 4px 24px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06);
+
+  /* float panels intentionally stay dark */
+  --float-bg:      #141412;
+  --float-bg-soft: rgba(20,20,18,0.96);
+  --float-border:  rgba(255,255,255,0.08);
 }
 
-/* ── Adaptive text utilities ───────────────────────────────────────────────── */
+/* ── Reduced-motion ─────────────────────────────────────────────────────────── */
+/* Applied globally so Tailwind transition utilities also respect this. */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration:        0.01ms !important;
+    animation-duration:         0.01ms !important;
+    animation-iteration-count:  1      !important;
+    scroll-behavior:            auto   !important;
+  }
+}
+
+/* ── Adaptive text utilities ────────────────────────────────────────────────── */
 
 .u-text   { color: var(--t);  }
 .u-text2  { color: var(--t2); }
 .u-text3  { color: var(--t3); }
 .u-text4  { color: var(--t4); }
 
-/* ── Light theme scoped overrides ──────────────────────────────────────────── */
-
-/* Text inside unino-page wrapper */
-[data-theme="light"] .unino-page .text-white      { color: #1d1d1f; }
-[data-theme="light"] .unino-page .text-gray-100   { color: #2c2c2e; }
-[data-theme="light"] .unino-page .text-gray-200   { color: #3c3c43; }
-[data-theme="light"] .unino-page .text-gray-300   { color: #3c3c43; }
-[data-theme="light"] .unino-page .text-gray-400   { color: #6e6e73; }
-[data-theme="light"] .unino-page .text-gray-500   { color: #8e8e93; }
-[data-theme="light"] .unino-page .text-gray-600   { color: #aeaeb2; }
-[data-theme="light"] .unino-page .text-gray-700   { color: #c7c7cc; }
-
-/* Hero gradient changes direction in light mode */
-[data-theme="light"] .unino-hero-gradient {
-  background-image: linear-gradient(to bottom, #1d1d1f 0%, #3c3c43 100%);
-}
-
-/* Text inside modals/panels */
-[data-theme="light"] .unino-modal .text-white    { color: #1d1d1f; }
-[data-theme="light"] .unino-modal .text-gray-300 { color: #3c3c43; }
-[data-theme="light"] .unino-modal .text-gray-400 { color: #6e6e73; }
-[data-theme="light"] .unino-modal .text-gray-500 { color: #8e8e93; }
-[data-theme="light"] .unino-modal .text-gray-600 { color: #aeaeb2; }
-[data-theme="light"] .unino-modal .text-gray-700 { color: #c7c7cc; }
-[data-theme="light"] .unino-modal input,
-[data-theme="light"] .unino-modal textarea        { color: #1d1d1f; }
-[data-theme="light"] .unino-modal input::placeholder,
-[data-theme="light"] .unino-modal textarea::placeholder { color: #8e8e93; }
-
-/* Sidebar text */
-[data-theme="light"] .unino-sidebar .text-gray-300  { color: #3c3c43; }
-[data-theme="light"] .unino-sidebar .text-gray-400  { color: #6e6e73; }
-[data-theme="light"] .unino-sidebar .text-gray-600  { color: #8e8e93; }
-[data-theme="light"] .unino-sidebar .text-gray-700  { color: #aeaeb2; }
-
-/* ── Additional tokens ──────────────────────────────────────────────────────── */
-
-:root {
-  --input-bg:         rgba(255,255,255,0.05);
-  --input-border:     rgba(255,255,255,0.10);
-  --divider:          rgba(255,255,255,0.06);
-  /* Always-dark instrument panels (Tuner, Metronome, PitchTrace) */
-  --float-bg:         #141418;
-  --float-bg-soft:    rgba(14,14,20,0.96);
-  --float-border:     rgba(255,255,255,0.08);
-}
-
-[data-theme="light"] {
-  --input-bg:         rgba(0,0,0,0.05);
-  --input-border:     rgba(0,0,0,0.12);
-  --divider:          rgba(0,0,0,0.07);
-  /* Instrument panels are intentionally always dark */
-  --float-bg:         #141418;
-  --float-bg-soft:    rgba(14,14,20,0.96);
-  --float-border:     rgba(255,255,255,0.08);
-}
-
-/* ── New utility classes ────────────────────────────────────────────────────── */
-
+/* Theme-adaptive input */
 .u-input {
-  background: var(--input-bg);
+  background:    var(--input-bg);
   border: 1px solid var(--input-border);
-  color: var(--t);
+  color:         var(--t);
+  border-radius: var(--r-md);
+  transition:    border-color var(--dur) var(--ease),
+                 box-shadow   var(--dur) var(--ease);
 }
 .u-input::placeholder { color: var(--t3); }
+.u-input:focus {
+  outline: none;
+  border-color: rgba(94,92,230,0.5);
+  box-shadow:   0 0 0 3px rgba(94,92,230,0.10);
+}
 
+/* Horizontal divider */
 .u-divider { background: var(--divider); }
+
+/* Surface hover */
 .u-hover-surface:hover { background: var(--surface-hover); }
 
-/* ── Room panel (ChatPanel, ThumbnailPanel) light-mode text overrides ───────── */
+/* ── Light-mode scoped text overrides ───────────────────────────────────────── */
+/* Strategy: high-specificity selectors remap Tailwind gray/white classes to    */
+/* Stone grays, so components don't need per-prop rewrites in later phases.      */
 
+/* unino-page (home page shell) */
+[data-theme="light"] .unino-page .text-white      { color: #1C1C1E; }
+[data-theme="light"] .unino-page .text-gray-100   { color: #2C2C2E; }
+[data-theme="light"] .unino-page .text-gray-200   { color: #3C3C43; }
+[data-theme="light"] .unino-page .text-gray-300   { color: #3C3C43; }
+[data-theme="light"] .unino-page .text-gray-400   { color: #6C6C70; }
+[data-theme="light"] .unino-page .text-gray-500   { color: #8E8E93; }
+[data-theme="light"] .unino-page .text-gray-600   { color: #AEAEB2; }
+[data-theme="light"] .unino-page .text-gray-700   { color: #C7C7CC; }
+
+/* Hero gradient in light mode */
+[data-theme="light"] .unino-hero-gradient {
+  background-image: linear-gradient(to bottom, #1C1C1E 0%, #3C3C43 100%);
+}
+
+/* unino-modal (all modals and dropdowns) */
+[data-theme="light"] .unino-modal .text-white     { color: #1C1C1E; }
+[data-theme="light"] .unino-modal .text-gray-200  { color: #2C2C2E; }
+[data-theme="light"] .unino-modal .text-gray-300  { color: #3C3C43; }
+[data-theme="light"] .unino-modal .text-gray-400  { color: #6C6C70; }
+[data-theme="light"] .unino-modal .text-gray-500  { color: #8E8E93; }
+[data-theme="light"] .unino-modal .text-gray-600  { color: #AEAEB2; }
+[data-theme="light"] .unino-modal .text-gray-700  { color: #C7C7CC; }
+[data-theme="light"] .unino-modal input,
+[data-theme="light"] .unino-modal textarea        { color: #1C1C1E; }
+[data-theme="light"] .unino-modal input::placeholder,
+[data-theme="light"] .unino-modal textarea::placeholder { color: #AEAEB2; }
+
+/* unino-sidebar */
+[data-theme="light"] .unino-sidebar .text-gray-300  { color: #3C3C43; }
+[data-theme="light"] .unino-sidebar .text-gray-400  { color: #6C6C70; }
+[data-theme="light"] .unino-sidebar .text-gray-600  { color: #8E8E93; }
+[data-theme="light"] .unino-sidebar .text-gray-700  { color: #AEAEB2; }
+
+/* unino-panel (ChatPanel, ThumbnailPanel) */
 [data-theme="light"] .unino-panel .text-white        { color: var(--t); }
-[data-theme="light"] .unino-panel .text-gray-100     { color: #1c1c1e; }
-[data-theme="light"] .unino-panel .text-gray-200     { color: #2c2c2e; }
-[data-theme="light"] .unino-panel .text-gray-300     { color: #3c3c43; }
-[data-theme="light"] .unino-panel .text-gray-400     { color: #6e6e73; }
-[data-theme="light"] .unino-panel .text-gray-500     { color: #8e8e93; }
-[data-theme="light"] .unino-panel .text-gray-600     { color: #aeaeb2; }
-[data-theme="light"] .unino-panel .text-gray-700     { color: #c7c7cc; }
+[data-theme="light"] .unino-panel .text-gray-100     { color: #1C1C1E; }
+[data-theme="light"] .unino-panel .text-gray-200     { color: #2C2C2E; }
+[data-theme="light"] .unino-panel .text-gray-300     { color: #3C3C43; }
+[data-theme="light"] .unino-panel .text-gray-400     { color: #6C6C70; }
+[data-theme="light"] .unino-panel .text-gray-500     { color: #8E8E93; }
+[data-theme="light"] .unino-panel .text-gray-600     { color: #AEAEB2; }
+[data-theme="light"] .unino-panel .text-gray-700     { color: #C7C7CC; }
 [data-theme="light"] .unino-panel input              { color: var(--t); background: var(--input-bg); }
 [data-theme="light"] .unino-panel input::placeholder { color: var(--t3); }
 
-/* ── Extended unino-modal light-mode overrides ──────────────────────────────── */
-
-/* Additional text */
-[data-theme="light"] .unino-modal .text-gray-200          { color: #2c2c2e; }
+/* ── Tailwind white/opacity remaps inside modals (light mode) ───────────────── */
 
 /* Semi-transparent white backgrounds → black-alpha equivalents */
-[data-theme="light"] .unino-modal .bg-white\/5            { background-color: rgba(0,0,0,0.04); }
-[data-theme="light"] .unino-modal .bg-white\/\[0\.03\]    { background-color: rgba(0,0,0,0.02); }
-[data-theme="light"] .unino-modal .bg-white\/\[0\.06\]    { background-color: rgba(0,0,0,0.05); }
-[data-theme="light"] .unino-modal .bg-white\/\[0\.07\]    { background-color: rgba(0,0,0,0.06); }
-[data-theme="light"] .unino-modal .bg-white\/10           { background-color: rgba(0,0,0,0.07); }
+[data-theme="light"] .unino-modal .bg-white\/5           { background-color: rgba(0,0,0,0.04); }
+[data-theme="light"] .unino-modal .bg-white\/\[0\.03\]   { background-color: rgba(0,0,0,0.02); }
+[data-theme="light"] .unino-modal .bg-white\/\[0\.06\]   { background-color: rgba(0,0,0,0.05); }
+[data-theme="light"] .unino-modal .bg-white\/\[0\.07\]   { background-color: rgba(0,0,0,0.06); }
+[data-theme="light"] .unino-modal .bg-white\/10          { background-color: rgba(0,0,0,0.07); }
 
 /* White-opacity borders → black-alpha equivalents */
 [data-theme="light"] .unino-modal .border-white\/5         { border-color: rgba(0,0,0,0.04); }
@@ -181,20 +258,19 @@ body {
 [data-theme="light"] .unino-modal .border-white\/\[0\.08\] { border-color: rgba(0,0,0,0.07); }
 [data-theme="light"] .unino-modal .border-white\/10        { border-color: rgba(0,0,0,0.10); }
 
-/* Hover background overrides */
+/* Hover backgrounds */
 [data-theme="light"] .unino-modal .hover\:bg-white\/5:hover         { background-color: rgba(0,0,0,0.04); }
 [data-theme="light"] .unino-modal .hover\:bg-white\/10:hover        { background-color: rgba(0,0,0,0.07); }
 [data-theme="light"] .unino-modal .hover\:bg-white\/\[0\.06\]:hover { background-color: rgba(0,0,0,0.05); }
 [data-theme="light"] .unino-modal .hover\:bg-white\/\[0\.07\]:hover { background-color: rgba(0,0,0,0.06); }
 
-/* Hover text overrides */
+/* Hover text */
 [data-theme="light"] .unino-modal .hover\:text-white:hover     { color: var(--t); }
-[data-theme="light"] .unino-modal .hover\:text-gray-300:hover  { color: #3c3c43; }
-[data-theme="light"] .unino-modal .hover\:text-gray-200:hover  { color: #2c2c2e; }
+[data-theme="light"] .unino-modal .hover\:text-gray-300:hover  { color: #3C3C43; }
+[data-theme="light"] .unino-modal .hover\:text-gray-200:hover  { color: #2C2C2E; }
 
 /* ── Primary accent buttons: always white text on colored backgrounds ────────
-   These selectors have equal specificity to .text-white overrides above;
-   placing them after ensures they win and restore white on indigo/emerald/red. */
+   Same specificity as .text-white overrides; placed after so they win.        */
 
 [data-theme="light"] .unino-modal .bg-indigo-600,
 [data-theme="light"] .unino-modal .bg-indigo-500,
@@ -211,10 +287,10 @@ body {
 [data-theme="light"] .unino-panel .bg-indigo-600,
 [data-theme="light"] .unino-panel .bg-indigo-500  { color: white; }
 
-/* ── Error text: ≥4.5:1 contrast in light mode ──────────────────────────────
-   red-400 (#f87171) on white/near-white ≈ 3.5:1 — below threshold.
-   red-700 (#b91c1c) on white ≈ 5.3:1; on the light-pink error box ≈ 5.3:1. */
+/* ── Error text: ≥4.5:1 in light mode ──────────────────────────────────────── */
+/* red-400 (#f87171) on white ≈ 3.5:1 — below threshold.                      */
+/* red-700 (#b91c1c) on white ≈ 5.3:1; on the light-pink error box ≈ 5.3:1.   */
 
-[data-theme="light"] .unino-modal .text-red-400       { color: #b91c1c; }
-[data-theme="light"] .unino-modal .text-red-300       { color: #991b1b; }
-[data-theme="light"] .unino-modal .text-red-500\/70   { color: #b91c1c; }
+[data-theme="light"] .unino-modal .text-red-400     { color: #b91c1c; }
+[data-theme="light"] .unino-modal .text-red-300     { color: #991b1b; }
+[data-theme="light"] .unino-modal .text-red-500\/70 { color: #b91c1c; }
