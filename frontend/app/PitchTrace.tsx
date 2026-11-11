@@ -108,6 +108,14 @@ function drawTrace(
 export default function PitchTrace({ pitchReading, a4Ref, remotePitches, shareEnabled, onShareChange, onClose, myName }: Props) {
   const [minimized, setMinimized] = useState(false);
   const [pos, setPos] = useState({ x: window.innerWidth - 340, y: 120 });
+  // Clock for "is this remote sender still active" (render must not call Date.now directly).
+  const [now, setNow] = useState(() => Date.now());
+  const hasRemote = Object.keys(remotePitches).length > 0;
+  useEffect(() => {
+    if (!hasRemote) return;
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [hasRemote]);
   const dragRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -184,7 +192,7 @@ export default function PitchTrace({ pitchReading, a4Ref, remotePitches, shareEn
   const freqLabel = active ? `${pitchReading!.freq.toFixed(1)} Hz` : '';
   const cColor = active ? centsColor(cents) : 'rgba(255,255,255,0.3)';
 
-  const remoteList = Object.values(remotePitches).filter(r => Date.now() - r.updatedAt < 3000);
+  const remoteList = Object.values(remotePitches).filter(r => now - r.updatedAt < 3000);
 
   return (
     <div
@@ -252,7 +260,7 @@ export default function PitchTrace({ pitchReading, a4Ref, remotePitches, shareEn
             <div style={{ padding: '0 14px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
               {remoteList.map(r => {
                 const rColor = senderColor(r.senderId);
-                const isActive = Date.now() - r.updatedAt < 500;
+                const isActive = now - r.updatedAt < 500;
                 return (
                   <div key={r.senderId} style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: isActive ? 1 : 0.4, transition: 'opacity 0.3s' }}>
                     <div style={{ width: 7, height: 7, borderRadius: 3.5, background: rColor, flexShrink: 0 }} />

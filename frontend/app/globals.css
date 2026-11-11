@@ -33,6 +33,17 @@ body {
 
 /* ── Keyframes ──────────────────────────────────────────────────────────────── */
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes omrFlash {
+  0%, 100% { opacity: 0; }
+  20%, 70% { opacity: 1; }
+}
+
+.omr-hit:hover { fill: rgba(99, 102, 241, 0.12); }
+
 @keyframes tbFadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -106,6 +117,9 @@ body {
   --shadow-md: 0 4px 16px rgba(0,0,0,0.38), 0 1px 4px rgba(0,0,0,0.22);
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.48), 0 2px 8px rgba(0,0,0,0.30);
 
+  /* ── Ambient glow opacity (home page hero) ── */
+  --glow-op: 0.10;
+
   /* ── Always-dark instrument panels (Tuner, Metronome, PitchTrace) ── */
   --float-bg:      #141412;
   --float-bg-soft: rgba(20,20,18,0.96);
@@ -149,6 +163,8 @@ body {
   --float-bg:      #141412;
   --float-bg-soft: rgba(20,20,18,0.96);
   --float-border:  rgba(255,255,255,0.08);
+
+  --glow-op: 0.04;
 }
 
 /* ── Reduced-motion ─────────────────────────────────────────────────────────── */
@@ -294,3 +310,44 @@ body {
 [data-theme="light"] .unino-modal .text-red-400     { color: #b91c1c; }
 [data-theme="light"] .unino-modal .text-red-300     { color: #991b1b; }
 [data-theme="light"] .unino-modal .text-red-500\/70 { color: #b91c1c; }
+
+/* ── Home page ambient glow ─────────────────────────────────────────────────── */
+
+.unino-glow {
+  background: var(--accent);
+  opacity:    var(--glow-op);
+}
+
+/* ── Phase 2 component utilities ───────────────────────────────────────────── */
+
+/* Avatar initials button */
+.unino-avatar-btn {
+  background:  var(--accent);
+  transition:  background var(--dur) var(--ease);
+}
+.unino-avatar-btn:hover { background: var(--accent-hover); }
+
+/* Header sign-in button (unauthenticated) */
+.unino-signin-btn {
+  background:   var(--surface);
+  border:       1px solid var(--border-md);
+  color:        var(--t);
+  border-radius: var(--r-md);
+  transition:   background var(--dur) var(--ease),
+                border-color var(--dur) var(--ease);
+}
+.unino-signin-btn:hover {
+  background:  var(--surface-hover);
+}
+
+/* Interactive surface row (session list items) */
+.unino-session-row {
+  background:  var(--surface);
+  border:      1px solid var(--border);
+  transition:  background var(--dur) var(--ease),
+               border-color var(--dur) var(--ease);
+}
+.unino-session-row:hover {
+  background:   var(--surface-hover);
+  border-color: var(--border-md);
+}

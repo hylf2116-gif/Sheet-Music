@@ -12,7 +12,18 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Third-party PDF.js files copied into public/ (minified, not our code).
+    "public/**",
+    // Node build scripts (CommonJS by design).
+    "scripts/**",
   ]),
+  {
+    rules: {
+      // Annotation objects are free-form JSON synced over Socket.IO and are typed as `any`.
+      // Kept visible as warnings until a shared Annotation type is introduced.
+      "@typescript-eslint/no-explicit-any": "warn",
+    },
+  },
 ]);
 
 export default eslintConfig;

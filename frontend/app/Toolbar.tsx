@@ -1,6 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import type { SymbolId } from './symbols';
+import { SYMBOL_LABELS } from './symbols';
+import SymbolPopover, { SymbolIcon, type SymbolSize } from './SymbolPalette';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -18,6 +21,14 @@ export interface ToolbarProps {
   setColor: (c: string) => void;
   strokeWidth: number;
   setStrokeWidth: (w: number) => void;
+  highlighterOpacity: number;
+  setHighlighterOpacity: (o: number) => void;
+  // Symbols tool
+  activeSymbol: SymbolId;
+  onPickSymbol: (id: SymbolId) => void;
+  recentSymbols: SymbolId[];
+  symbolSize: SymbolSize;
+  setSymbolSize: (s: SymbolSize) => void;
   isHost: boolean;
   participantCount: number;
   scrollSyncEnabled: boolean;
@@ -28,6 +39,8 @@ export interface ToolbarProps {
   currentPage: number;
   numPages: number;
   canUndo: boolean;
+  canRedo: boolean;
+  onRedo: () => void;
   onGoHome: () => void;
   onUndo: () => void;
   onClearAll: () => void;
@@ -44,6 +57,9 @@ export interface ToolbarProps {
   onToggleThumbs: () => void;
   bookmarkActive: boolean;
   onToggleBookmark: () => void;
+  nickname?: string;
+  onRename?: () => void;
+  onOpenHandsPanel?: () => void;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -54,17 +70,24 @@ const STROKE_SIZES = [
   { label: 'Medium', w: 4, dot: 8  },
   { label: 'Thick',  w: 8, dot: 12 },
 ];
+// Highlighter widths are much thicker than pen widths (screen pixels).
+export const HIGHLIGHTER_SIZES = [
+  { label: 'Thin',   w: 10, dot: 6  },
+  { label: 'Medium', w: 18, dot: 10 },
+  { label: 'Thick',  w: 30, dot: 14 },
+];
 const ANNOTATE_TOOLS = [
   { id: 'pen',       label: 'Pen'       },
-  { id: 'highlight', label: 'Highlight' },
+  { id: 'highlight', label: 'Highlighter' },
   { id: 'ellipse',   label: 'Ellipse'   },
   { id: 'line',      label: 'Line'      },
   { id: 'text',      label: 'Text'      },
+  { id: 'symbol',    label: 'Symbols'   },
   { id: 'eraser',    label: 'Eraser'    },
   { id: 'select',    label: 'Select'    },
   { id: 'laser',     label: 'Laser'     },
 ];
-const DRAW_TOOLS = new Set(['pen', 'highlight', 'ellipse', 'line', 'text']);
+const DRAW_TOOLS = new Set(['pen', 'highlight', 'ellipse', 'line', 'text', 'symbol']);
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -75,10 +98,12 @@ const ICONS: Record<string, React.ReactNode> = {
   line:      <path d="M5 19 19 5" />,
   highlight: (<><path d="M9 11l-6 6v3h9l3-3" /><path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" /></>),
   eraser:    (<><path d="m7 21-4.3-4.3a2 2 0 0 1 0-2.8l9.6-9.6a2 2 0 0 1 2.8 0l5.6 5.6a2 2 0 0 1 0 2.8L13 21" /><path d="M22 21H7" /></>),
+  symbol:    (<><path d="M4 18c3-9 13-9 16 0" /><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none" /></>),
   text:      (<><path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" /></>),
   laser:     (<><circle cx="12" cy="12" r="3" /><line x1="12" y1="2" x2="12" y2="7" /><line x1="12" y1="17" x2="12" y2="22" /><line x1="2" y1="12" x2="7" y2="12" /><line x1="17" y1="12" x2="22" y2="12" /></>),
   music:     (<><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></>),
   undo:      (<><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H9" /></>),
+  redo:      (<><path d="m15 14 5-5-5-5" /><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H15" /></>),
   trash:     (<><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M10 11v6" /><path d="M14 11v6" /></>),
   link:      (<><path d="M9 17H7A5 5 0 0 1 7 7h2" /><path d="M15 7h2a5 5 0 1 1 0 10h-2" /><path d="M8 12h8" /></>),
   check:     <path d="M20 6 9 17l-5-5" />,
@@ -110,6 +135,9 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 
 export default function Toolbar(p: ToolbarProps) {
   const [showPosMenu, setShowPosMenu] = useState(false);
+  // Full symbol palette opened from the "All" button (screen position of the popover).
+  const [symbolPaletteAt, setSymbolPaletteAt] = useState<{ left: number; top: number } | null>(null);
+  const allSymbolsBtnRef = useRef<HTMLButtonElement>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     annotate: false, navigate: false, room: false, tools: false,
   });
@@ -176,16 +204,76 @@ export default function Toolbar(p: ToolbarProps) {
   }
 
   function StrokeRow() {
+    const isHl = p.activeTool === 'highlight';
+    const sizes = isHl ? HIGHLIGHTER_SIZES : STROKE_SIZES;
     return (
       <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'px-2 pb-1' : ''}`}>
-        {STROKE_SIZES.map(s => (
+        {sizes.map(s => (
           <button key={s.label} onClick={() => p.setStrokeWidth(s.w)} title={s.label}
             className={`rounded-lg flex items-center justify-center transition-colors ${p.pos === 'top' ? 'w-7 h-7' : 'flex-1 h-7'} ${
               p.strokeWidth === s.w ? 'bg-black/[0.08]' : 'hover:bg-black/[0.04]'
             }`}>
-            <span className="rounded-full bg-gray-600" style={{ width: s.dot, height: s.dot }} />
+            <span className={isHl ? 'rounded-sm' : 'rounded-full bg-gray-600'} style={{
+              width: s.dot, height: s.dot,
+              ...(isHl ? { backgroundColor: p.color, opacity: Math.max(p.highlighterOpacity, 0.25) } : {}),
+            }} />
           </button>
         ))}
+      </div>
+    );
+  }
+
+  // Highlighter opacity slider (10%–90%).
+  function OpacityRow() {
+    return (
+      <div className={`flex items-center gap-1.5 ${p.pos !== 'top' ? 'px-2 pb-1.5' : ''}`} title="Highlighter opacity">
+        <span className="text-[10px] text-gray-500 select-none">Opacity</span>
+        <input type="range" min={10} max={90} step={5} aria-label="Highlighter opacity"
+          value={Math.round(p.highlighterOpacity * 100)}
+          onChange={e => p.setHighlighterOpacity(Number(e.target.value) / 100)}
+          className={p.pos === 'top' ? 'w-20' : 'flex-1 min-w-0'} style={{ accentColor: '#6366f1' }} />
+        <span className="text-[10px] text-gray-500 w-7 text-right tabular-nums select-none">{Math.round(p.highlighterOpacity * 100)}%</span>
+      </div>
+    );
+  }
+
+  // Symbols tool controls: current + recent symbols, "All" palette, and S/M/L size.
+  // Plain render function (not a component) so the popover state lives in Toolbar.
+  function symbolRow() {
+    const quick = [p.activeSymbol, ...p.recentSymbols.filter(s => s !== p.activeSymbol)].slice(0, 6);
+    return (
+      <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'flex-wrap px-2 pb-1.5' : 'shrink-0'}`}>
+        {quick.map(id => (
+          <button key={id} onClick={() => p.onPickSymbol(id)} title={SYMBOL_LABELS[id]} aria-label={SYMBOL_LABELS[id]}
+            className={`h-7 px-1 rounded-lg flex items-center justify-center transition-colors ${
+              id === p.activeSymbol ? 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-300' : 'text-gray-700 hover:bg-black/[0.05]'
+            }`}>
+            <SymbolIcon id={id} size={14} />
+          </button>
+        ))}
+        <button ref={allSymbolsBtnRef} title="All symbols" aria-label="All symbols"
+          onClick={() => {
+            const r = allSymbolsBtnRef.current?.getBoundingClientRect();
+            setSymbolPaletteAt(prev => prev ? null : { left: r ? r.left : 100, top: r ? r.bottom + 6 : 60 });
+          }}
+          className="h-7 px-2 rounded-lg text-xs font-medium text-gray-600 hover:bg-black/[0.05]">
+          All
+        </button>
+        <div className={p.pos === 'top' ? 'w-px h-5 bg-black/[0.08] mx-1' : 'w-full h-px bg-black/[0.05] my-1'} />
+        {(['S', 'M', 'L'] as const).map(s => (
+          <button key={s} onClick={() => p.setSymbolSize(s)} title={`Size ${s}`}
+            className={`w-7 h-7 rounded-lg text-xs font-semibold transition-colors ${
+              p.symbolSize === s ? 'bg-black/[0.08] text-gray-900' : 'text-gray-500 hover:bg-black/[0.04]'
+            }`}>
+            {s}
+          </button>
+        ))}
+        {symbolPaletteAt && (
+          <SymbolPopover left={symbolPaletteAt.left} top={symbolPaletteAt.top}
+            recent={p.recentSymbols} active={p.activeSymbol}
+            onPick={id => { p.onPickSymbol(id); setSymbolPaletteAt(null); }}
+            onClose={() => setSymbolPaletteAt(null)} />
+        )}
       </div>
     );
   }
@@ -208,6 +296,17 @@ export default function Toolbar(p: ToolbarProps) {
       );
     }
     if (!isDraw) return null;
+    if (p.activeTool === 'symbol') {
+      return p.pos === 'top'
+        ? (<><Divider /><ColorRow /><Divider />{symbolRow()}</>)
+        : (
+          <div className="mx-2 mb-2 rounded-xl" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.05)' }}>
+            <ColorRow />
+            <div className="mx-2 h-px bg-black/[0.05] my-1" />
+            {symbolRow()}
+          </div>
+        );
+    }
     if (p.pos === 'top') {
       return (
         <>
@@ -215,6 +314,7 @@ export default function Toolbar(p: ToolbarProps) {
           <ColorRow />
           <Divider />
           <StrokeRow />
+          {p.activeTool === 'highlight' && (<><Divider /><OpacityRow /></>)}
         </>
       );
     }
@@ -223,6 +323,7 @@ export default function Toolbar(p: ToolbarProps) {
         <ColorRow />
         <div className="mx-2 h-px bg-black/[0.05] my-1" />
         <StrokeRow />
+        {p.activeTool === 'highlight' && <OpacityRow />}
       </div>
     );
   }
@@ -312,9 +413,13 @@ export default function Toolbar(p: ToolbarProps) {
 
             <Divider />
 
-            <button onClick={p.onUndo} disabled={!p.canUndo} title="Undo"
+            <button onClick={p.onUndo} disabled={!p.canUndo} title="Undo (Cmd/Ctrl+Z)"
               className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 disabled:opacity-30 transition-colors shrink-0">
               <Icon name="undo" size={16} />
+            </button>
+            <button onClick={p.onRedo} disabled={!p.canRedo} title="Redo (Shift+Cmd/Ctrl+Z)"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 disabled:opacity-30 transition-colors shrink-0">
+              <Icon name="redo" size={16} />
             </button>
             <button onClick={p.onClearAll} title="Clear all"
               className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500 transition-colors shrink-0">
@@ -344,6 +449,12 @@ export default function Toolbar(p: ToolbarProps) {
             {p.isHost ? (
               <>
                 <span className="text-[11px] font-semibold text-amber-600 select-none px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-100 shrink-0">👑</span>
+                {p.nickname && (
+                  <button onClick={p.onRename} title="Change name"
+                    className="text-[11px] text-gray-500 hover:text-gray-800 hover:bg-black/[0.04] rounded-md px-1.5 py-0.5 transition-colors shrink-0 max-w-[90px] truncate">
+                    {p.nickname}
+                  </button>
+                )}
                 <span className="text-[11px] text-gray-400 select-none tabular-nums shrink-0">{p.participantCount}</span>
                 <button onClick={p.onToggleScrollSync} title={p.scrollSyncEnabled ? 'Scroll sync on' : 'Scroll sync off'}
                   className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
@@ -352,18 +463,27 @@ export default function Toolbar(p: ToolbarProps) {
                   <Icon name="sync" size={13} />
                 </button>
                 {p.raisedHands.length > 0 && (
-                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded-full px-1.5 py-0.5 select-none shrink-0">
+                  <button onClick={p.onOpenHandsPanel}
+                    className="text-[10px] font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-full px-1.5 py-0.5 select-none shrink-0 transition-colors">
                     ✋{p.raisedHands.length}
-                  </span>
+                  </button>
                 )}
               </>
             ) : (
-              <button onClick={p.onToggleHand}
-                className={`flex items-center gap-1 h-7 px-2 rounded-lg text-[11px] font-medium transition-colors shrink-0 ${
-                  p.handRaised ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-700'
-                }`}>
-                ✋ {p.handRaised ? 'Lower' : 'Raise hand'}
-              </button>
+              <>
+                <button onClick={p.onToggleHand}
+                  className={`flex items-center gap-1 h-7 px-2 rounded-lg text-[11px] font-medium transition-colors shrink-0 ${
+                    p.handRaised ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-700'
+                  }`}>
+                  ✋ {p.handRaised ? 'Lower' : 'Raise hand'}
+                </button>
+                {p.nickname && (
+                  <button onClick={p.onRename} title="Change name"
+                    className="text-[11px] text-gray-500 hover:text-gray-800 hover:bg-black/[0.04] rounded-md px-1.5 py-0.5 transition-colors shrink-0 max-w-[90px] truncate">
+                    {p.nickname}
+                  </button>
+                )}
+              </>
             )}
 
             <div className="w-px h-4 bg-black/[0.08] mx-1 shrink-0" />
@@ -453,6 +573,7 @@ export default function Toolbar(p: ToolbarProps) {
             )}
             {/* Undo / Clear */}
             <SideRow icon="undo" label="Undo" disabled={!p.canUndo} onClick={p.onUndo} />
+            <SideRow icon="redo" label="Redo" disabled={!p.canRedo} onClick={p.onRedo} />
             <SideRow icon="trash" label="Clear all" danger onClick={p.onClearAll} />
             {/* Scroll sync (host only) */}
             {p.isHost && (
@@ -495,6 +616,13 @@ export default function Toolbar(p: ToolbarProps) {
                   <span className="text-sm">👑</span>
                   <span className="text-xs font-semibold text-amber-600">Host</span>
                 </div>
+                {p.nickname && (
+                  <button onClick={p.onRename}
+                    className="flex items-center gap-2 px-2 py-1.5 w-full rounded-xl text-left text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 transition-colors">
+                    <span className="text-xs font-medium truncate">{p.nickname}</span>
+                    <span className="text-[10px] text-gray-400 ml-auto shrink-0">rename</span>
+                  </button>
+                )}
                 {p.participantCount > 0 && (
                   <div className="flex items-center gap-2 px-2 py-1.5 text-gray-500">
                     <span className="text-sm">👥</span>
@@ -502,10 +630,11 @@ export default function Toolbar(p: ToolbarProps) {
                   </div>
                 )}
                 {p.raisedHands.length > 0 && (
-                  <div className="flex items-center gap-2 px-2 py-1.5 rounded-xl bg-amber-50 text-amber-700">
+                  <button onClick={p.onOpenHandsPanel}
+                    className="flex items-center gap-2 px-2 py-1.5 w-full rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors">
                     <span className="text-sm">✋</span>
                     <span className="text-xs font-medium">{p.raisedHands.length} raised</span>
-                  </div>
+                  </button>
                 )}
               </>
             ) : (
@@ -513,6 +642,13 @@ export default function Toolbar(p: ToolbarProps) {
                 <div className="flex items-center gap-2 px-2 py-1.5 text-gray-400">
                   <span className="text-xs font-medium">Participant</span>
                 </div>
+                {p.nickname && (
+                  <button onClick={p.onRename}
+                    className="flex items-center gap-2 px-2 py-1.5 w-full rounded-xl text-left text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 transition-colors">
+                    <span className="text-xs font-medium truncate">{p.nickname}</span>
+                    <span className="text-[10px] text-gray-400 ml-auto shrink-0">rename</span>
+                  </button>
+                )}
                 <button onClick={p.onToggleHand}
                   className={`flex items-center gap-2.5 px-2 py-2 rounded-xl text-sm transition-colors ${
                     p.handRaised ? 'bg-amber-50 text-amber-700' : 'text-gray-500 hover:bg-black/[0.04]'

@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from 'react';
 
 interface Props {
   defaultName: string;
-  onConfirm: (filename: string) => void;
+  hasHiddenLayers?: boolean;
+  onConfirm: (filename: string, onlyVisible: boolean) => void;
   onClose: () => void;
 }
 
-export default function ExportModal({ defaultName, onConfirm, onClose }: Props) {
+export default function ExportModal({ defaultName, hasHiddenLayers = false, onConfirm, onClose }: Props) {
   const [filename, setFilename] = useState(defaultName);
+  const [onlyVisible, setOnlyVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -24,7 +26,7 @@ export default function ExportModal({ defaultName, onConfirm, onClose }: Props) 
 
   function confirm() {
     const trimmed = filename.trim() || defaultName;
-    onConfirm(trimmed.endsWith('.pdf') ? trimmed : `${trimmed}.pdf`);
+    onConfirm(trimmed.endsWith('.pdf') ? trimmed : `${trimmed}.pdf`, onlyVisible);
   }
 
   return (
@@ -68,6 +70,31 @@ export default function ExportModal({ defaultName, onConfirm, onClose }: Props) 
           className="w-full u-input rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition-colors"
           spellCheck={false}
         />
+
+        {/* Only visible layers checkbox — shown when some layers are hidden */}
+        {hasHiddenLayers && (
+          <label className="flex items-center gap-2.5 mt-3.5 cursor-pointer select-none group">
+            <div
+              className="relative w-4 h-4 rounded-[4px] border flex items-center justify-center transition-colors"
+              style={{
+                background: onlyVisible ? 'var(--accent)' : 'transparent',
+                borderColor: onlyVisible ? 'var(--accent)' : 'var(--border-md)',
+              }}
+              onClick={() => setOnlyVisible(v => !v)}
+            >
+              {onlyVisible && (
+                <svg viewBox="0 0 12 12" fill="none" stroke="white" strokeWidth={2}
+                  strokeLinecap="round" strokeLinejoin="round" className="w-2.5 h-2.5">
+                  <polyline points="2 6 5 9 10 3" />
+                </svg>
+              )}
+            </div>
+            <input type="checkbox" className="sr-only" checked={onlyVisible} onChange={e => setOnlyVisible(e.target.checked)} />
+            <span className="text-xs text-gray-400 group-hover:text-gray-300 transition-colors">
+              Only include visible layers
+            </span>
+          </label>
+        )}
 
         {/* Downloads notice */}
         <div className="flex items-center gap-1.5 mt-2.5 px-0.5">

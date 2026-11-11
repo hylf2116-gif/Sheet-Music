@@ -1,4 +1,22 @@
 import { PDFDocument, rgb, LineCapStyle, StandardFonts } from 'pdf-lib';
+import { SYMBOL_DEFS, type SymbolId } from './symbols';
+
+// Transform every x,y pair of an SVG path that uses only absolute M/L/C/Q/Z commands
+// (true for all symbol paths in symbols.ts).
+function mapPathPoints(d: string, f: (x: number, y: number) => [number, number]): string {
+  const tokens = d.match(/[MLCQZ]|-?\d*\.?\d+(?:e-?\d+)?/gi) ?? [];
+  const out: string[] = [];
+  let pending: number | null = null;
+  for (const tk of tokens) {
+    if (/^[A-Za-z]$/.test(tk)) { out.push(tk); continue; }
+    const n = Number(tk);
+    if (pending === null) { pending = n; continue; }
+    const [x, y] = f(pending, n);
+    out.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+    pending = null;
+  }
+  return out.join(' ');
+}
 
 // ── Filename helpers ──────────────────────────────────────────────────────────
 
@@ -110,6 +128,19 @@ export async function exportAnnotatedPDF(
           color, opacity: 0.3,
         });
 
+      } else if (ann.type === 'symbol') {
+        const def = SYMBOL_DEFS[ann.symbolId as SymbolId];
+        if (def && ann.w > 0 && ann.h > 0) {
+          // Map the glyph box (font units, y down) onto the annotation box in page points,
+          // so stretched hairpins/slurs export exactly as they look on screen.
+          const sx = (ann.w * pw) / def.bw;
+          const sy = (ann.h * ph) / def.bh;
+          const d = mapPathPoints(def.d, (x, y) => [ann.x * pw + (x - def.bx) * sx, ann.y * ph + (y - def.by) * sy]);
+          page.drawSvgPath(d, def.fill
+            ? { x: 0, y: ph, scale: 1, color }
+            : { x: 0, y: ph, scale: 1, borderColor: color, borderWidth: 1.2, borderLineCap: LineCapStyle.Round });
+        }
+
       } else if (ann.type === 'pen') {
         const path = buildScaledPath(ann.points ?? [], pw, ph);
         if (path) {
@@ -118,6 +149,8 @@ export async function exportAnnotatedPDF(
           page.drawSvgPath(path, {
             x: 0, y: ph, scale: 1,
             borderColor: color, borderWidth: sw, borderLineCap: LineCapStyle.Round,
+            // Highlighter strokes keep their transparency in the exported PDF.
+            ...(ann.highlighter ? { borderOpacity: ann.opacity ?? 0.4 } : {}),
           });
         }
 

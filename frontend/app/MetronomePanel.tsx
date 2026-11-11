@@ -87,7 +87,6 @@ function evalBpmExpr(raw: string, currentBpm: number): number | null {
   const expr = /^[+\-*/]/.test(s) ? `${currentBpm}${s}` : s;
   if (!/^[\d\s+\-*/.()\s]+$/.test(expr)) return null;
   try {
-    // eslint-disable-next-line no-new-func
     const result = new Function(`return (${expr})`)();
     if (typeof result === 'number' && isFinite(result)) return Math.round(result * 10) / 10;
   } catch {}
@@ -186,7 +185,17 @@ function playSound(ctx: AudioContext, type: SoundType, freq: number, gain: numbe
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, onClose }: Props) {
+// Collapsible section header. Defined at module level so React keeps it stable between renders.
+function SectionHeader({ title, isOpen, onToggle }: { title: string; isOpen: boolean; onToggle: () => void }) {
+  return (
+    <button onClick={onToggle} className="w-full flex items-center justify-between py-1">
+      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">{title}</span>
+      <svg viewBox="0 0 24 24" className={`w-3.5 h-3.5 text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2}><path d="M6 9l6 6 6-6" /></svg>
+    </button>
+  );
+}
+
+export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose }: Props) {
   // BPM
   const [bpm, setBpm] = useState(120);
   const [bpmEditing, setBpmEditing] = useState(false);
@@ -313,6 +322,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
   useEffect(() => {
     try {
       const s = localStorage.getItem(STORAGE_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- load saved presets after mount (localStorage is not available during server render)
       if (s) setPresets(JSON.parse(s));
     } catch {}
   }, []);
@@ -321,6 +331,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
   useEffect(() => {
     if (isHost || !remoteState) return;
     const s = remoteState;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- apply the host's metronome state received over the socket
     setBpm(s.bpm); R.current.bpm = s.bpm;
     if (s.beatsPerBar) { setBeatsPerBar(s.beatsPerBar); R.current.beatsPerBar = s.beatsPerBar; }
     if (s.denominator) setDenominator(s.denominator);
@@ -406,7 +417,6 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
       const when = nextBeatTimeRef.current;
       const delay = Math.max(0, (when - ctx.currentTime) * 1000);
       const capBeat = beatInBar;
-      const capSub = subInBeat;
       const capBarIdx = barIdx;
       const capIsBarStart = isBarStart;
       setTimeout(() => {
@@ -471,7 +481,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
 
     schedulerRef.current = window.setTimeout(scheduleBeats, 25);
   // useCallback with [] — reads all state via R ref
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   scheduleRef.current = scheduleBeats;
@@ -573,6 +583,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
 
   useEffect(() => {
     if (panelPos.x === -1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- position needs window size, only known after mount
       setPanelPos({
         x: Math.max(0, window.innerWidth - panelSize.w - 24),
         y: Math.max(0, window.innerHeight - panelSize.h - 80),
@@ -686,17 +697,6 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
 
   const tempoMarking = TEMPO_MARKINGS.findLast(t => bpm >= t.min)?.name ?? 'Larghissimo';
   const pendulumAngle = currentBeat >= 0 ? (currentBeat / Math.max(beatsPerBar - 1, 1)) * 60 - 30 : 0;
-
-  // ── Section header helper ─────────────────────────────────────────────────
-
-  function SH({ title, k }: { title: string; k: keyof typeof open }) {
-    return (
-      <button onClick={() => toggleOpen(k)} className="w-full flex items-center justify-between py-1">
-        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">{title}</span>
-        <svg viewBox="0 0 24 24" className={`w-3.5 h-3.5 text-gray-600 transition-transform ${open[k] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2}><path d="M6 9l6 6 6-6" /></svg>
-      </button>
-    );
-  }
 
   // ── Minimized widget ──────────────────────────────────────────────────────
 
@@ -830,7 +830,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
 
         {/* ── TEMPO ── */}
         <div className="flex flex-col gap-2">
-          <SH title="Tempo" k="tempo" />
+          <SectionHeader title="Tempo" isOpen={open.tempo} onToggle={() => toggleOpen('tempo')} />
           {open.tempo && (
             <>
               <div className="flex items-center gap-2">
@@ -945,7 +945,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
 
         {/* ── TIME SIGNATURE ── */}
         <div className="flex flex-col gap-2">
-          <SH title="Time Signature" k="timesig" />
+          <SectionHeader title="Time Signature" isOpen={open.timesig} onToggle={() => toggleOpen('timesig')} />
           {open.timesig && (
             <>
               {/* Presets */}
@@ -1018,7 +1018,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
 
         {/* ── SOUND ── */}
         <div className="flex flex-col gap-2">
-          <SH title="Sound" k="sound" />
+          <SectionHeader title="Sound" isOpen={open.sound} onToggle={() => toggleOpen('sound')} />
           {open.sound && (
             <>
               <div className="flex flex-wrap gap-1">
@@ -1074,7 +1074,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
 
         {/* ── ACCENTS ── */}
         <div className="flex flex-col gap-2">
-          <SH title="Accents" k="accents" />
+          <SectionHeader title="Accents" isOpen={open.accents} onToggle={() => toggleOpen('accents')} />
           {open.accents && (
             <div className="flex flex-col gap-1.5">
               <div className="flex flex-wrap gap-1 select-none"
@@ -1117,7 +1117,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
         {/* ── TEMPO TRAINER ── */}
         {isHost && (
           <div className="flex flex-col gap-2 pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-            <SH title="Tempo Trainer" k="trainer" />
+            <SectionHeader title="Tempo Trainer" isOpen={open.trainer} onToggle={() => toggleOpen('trainer')} />
             {open.trainer && (
               <div className="flex flex-col gap-3">
                 <div className="grid grid-cols-4 gap-1">
@@ -1191,7 +1191,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
 
         {/* ── PRESETS ── */}
         <div className="flex flex-col gap-2 pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <SH title="Presets" k="presets" />
+          <SectionHeader title="Presets" isOpen={open.presets} onToggle={() => toggleOpen('presets')} />
           {open.presets && (
             <div className="flex flex-col gap-1.5">
               {presets.length === 0 && <span className="text-xs text-gray-600">No presets saved.</span>}
@@ -1228,7 +1228,7 @@ export default function MetronomePanel({ isHost, roomId, remoteState, onUpdate, 
 
         {/* ── TIMER ── */}
         <div className="flex flex-col gap-2 pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <SH title="Timer" k="timer" />
+          <SectionHeader title="Timer" isOpen={open.timer} onToggle={() => toggleOpen('timer')} />
           {open.timer && (
             <div className="flex flex-col gap-2">
               <div className="grid grid-cols-3 gap-1">

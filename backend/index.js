@@ -6,7 +6,66 @@ const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const https = require('https');
 
+// ── Load .env (no dotenv dependency required) ──────────────────────────────
+function loadEnv(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    for (const line of content.split('\n')) {
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  } catch {}
+}
+loadEnv(path.join(__dirname, '.env'));
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+
+// ── Crypto helpers ─────────────────────────────────────────────────────────
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function safeCompareHash(a, b) {
+  try {
+    const bufA = Buffer.from(a, 'hex');
+    const bufB = Buffer.from(b, 'hex');
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch { return false; }
+}
+
+async function verifySupabaseToken(accessToken) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !accessToken) return null;
+  return new Promise((resolve) => {
+    const url = new URL('/auth/v1/user', SUPABASE_URL);
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        path: url.pathname,
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => { data += c; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(data).id || null); } catch { resolve(null); }
+        });
+      },
+    );
+    req.on('error', () => resolve(null));
+    req.setTimeout(5000, () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
+// ── Express + Socket.IO setup ──────────────────────────────────────────────
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -14,34 +73,112 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const DATA_DIR = path.join(__dirname, 'data');
 const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
-
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
+
+// Recursively verify all numeric values are finite (NaN serialises to null in JSON).
+function isValidChanges(obj) {
+  if (obj == null || typeof obj !== 'object') return false;
+  for (const v of Object.values(obj)) {
+    if (typeof v === 'number' && !Number.isFinite(v)) return false;
+    if (v === null) return false;
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        if (item != null && typeof item === 'object') {
+          for (const pv of Object.values(item)) {
+            if (typeof pv === 'number' && !Number.isFinite(pv)) return false;
+            if (pv === null) return false;
+          }
+        }
+      }
+    }
+  }
+  return true;
+}
 
 function loadRooms() {
   try {
     if (fs.existsSync(ROOMS_FILE)) {
       const data = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf8'));
-      // Reset session-specific state on load
       for (const id of Object.keys(data)) {
+        // Reset session-only state on server restart
         data[id].hostId = null;
+        data[id].hostSockets = new Set();
         data[id].raisedHands = [];
-        data[id].messages = [];   // chat history is session-only, not persisted
+        data[id].messages = [];
         if (data[id].currentPage === undefined) data[id].currentPage = 0;
+        const before = (data[id].shapes || []).length;
+        data[id].shapes = (data[id].shapes || []).filter((s) => isValidChanges(s));
+        const dropped = before - data[id].shapes.length;
+        if (dropped > 0) console.warn(`Room ${id}: dropped ${dropped} annotation(s) with corrupt geometry`);
       }
       return data;
     }
   } catch (e) {
     console.error('Failed to load rooms:', e);
+    // Keep the unreadable file instead of letting the next save overwrite it with an empty list.
+    try {
+      const keep = `${ROOMS_FILE}.unreadable-${Date.now()}`;
+      fs.copyFileSync(ROOMS_FILE, keep);
+      console.error(`Copied the unreadable rooms file to ${keep}`);
+    } catch {}
   }
   return {};
 }
 
+function serializeRooms() {
+  // hostSockets is a Set (session-only) — strip before serialising
+  const toSave = {};
+  for (const [id, room] of Object.entries(rooms)) {
+    const { hostSockets, ...rest } = room;
+    toSave[id] = rest;
+  }
+  return JSON.stringify(toSave, null, 2);
+}
+
+// Saving is coalesced and atomic. Bursts of changes (e.g. erasing) used to start many
+// overlapping fs.writeFile calls on the same file; a shorter write could leave the tail of a
+// longer one behind and corrupt rooms.json. Now: at most one write at a time, to a temp file
+// that is then renamed over rooms.json (rename is atomic), so the file is never half-written.
+let saveTimer = null;
+let saveInProgress = false;
+let saveAgain = false;
+
 function saveRooms() {
-  fs.writeFile(ROOMS_FILE, JSON.stringify(rooms, null, 2), err => {
-    if (err) console.error('Failed to save rooms:', err);
+  if (saveTimer) return;
+  saveTimer = setTimeout(flushRooms, 150);
+}
+
+function flushRooms() {
+  saveTimer = null;
+  if (saveInProgress) { saveAgain = true; return; }
+  saveInProgress = true;
+  const tmp = `${ROOMS_FILE}.tmp`;
+  fs.writeFile(tmp, serializeRooms(), (err) => {
+    if (err) { console.error('Failed to save rooms:', err); return finishSave(); }
+    fs.rename(tmp, ROOMS_FILE, (err2) => {
+      if (err2) console.error('Failed to save rooms:', err2);
+      finishSave();
+    });
   });
+}
+
+function finishSave() {
+  saveInProgress = false;
+  if (saveAgain) { saveAgain = false; flushRooms(); }
+}
+
+// Write any pending changes before the server stops.
+function saveRoomsSync() {
+  try {
+    const tmp = `${ROOMS_FILE}.tmp`;
+    fs.writeFileSync(tmp, serializeRooms());
+    fs.renameSync(tmp, ROOMS_FILE);
+  } catch (e) { console.error('Failed to save rooms on exit:', e); }
+}
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { saveRoomsSync(); process.exit(0); });
 }
 
 const storage = multer.diskStorage({
@@ -58,26 +195,62 @@ const upload = multer({
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: 'http://localhost:3000', methods: ['GET', 'POST'] }
+  cors: { origin: 'http://localhost:3000', methods: ['GET', 'POST'] },
 });
 
-// rooms[id] = { pdfUrl, shapes, currentPage, hostId, raisedHands }
 const rooms = loadRooms();
+const socketNames = {};    // socket.id → display name (session-only)
+const socketClientId = {}; // socket.id → stable clientId (session-only)
 
-app.post('/create-room', (req, res) => {
+function sanitizeNickname(name) {
+  if (typeof name !== 'string') return '';
+  return name.replace(/[\x00-\x1F\x7F]/g, '').replace(/\s+/g, ' ').trim().slice(0, 32);
+}
+
+// Deduplication excludes the reconnecting client's own sockets so they reclaim their name.
+function deduplicateNickname(name, roomId, excludeClientId) {
+  const roomSockets = io.sockets.adapter.rooms.get(roomId) || new Set();
+  const taken = new Set(
+    [...roomSockets]
+      .filter((sid) => socketClientId[sid] !== excludeClientId && socketNames[sid])
+      .map((sid) => socketNames[sid].toLowerCase()),
+  );
+  let candidate = name;
+  let suffix = 2;
+  while (taken.has(candidate.toLowerCase())) candidate = `${name} ${suffix++}`;
+  return candidate;
+}
+
+const imslp = require('./imslp');
+
+// ── HTTP routes ────────────────────────────────────────────────────────────
+app.post('/create-room', async (req, res) => {
+  const { pdfUrl, scoreName, creatorId, clientId, supabaseToken } = req.body;
   const roomId = uuidv4();
+  const hostToken = crypto.randomBytes(32).toString('hex');
+
+  let hostUserId = null;
+  if (supabaseToken) {
+    try { hostUserId = await verifySupabaseToken(supabaseToken); } catch {}
+  }
+
   rooms[roomId] = {
     shapes: [],
     messages: [],
-    pdfUrl: req.body.pdfUrl,
-    scoreName: req.body.scoreName ?? 'Untitled Score',
+    pdfUrl,
+    scoreName: scoreName ?? 'Untitled Score',
     currentPage: 0,
     hostId: null,
+    hostSockets: new Set(),
     raisedHands: [],
-    creatorId: req.body.creatorId ?? null,
+    creatorId: creatorId ?? null,
+    // Stable-identity credentials (persisted to rooms.json)
+    hostTokenHash: hashToken(hostToken),
+    hostClientId: clientId ?? null,
+    hostUserId,
   };
   saveRooms();
-  res.json({ roomId });
+  res.json({ roomId, hostToken });
 });
 
 app.post('/upload', upload.single('pdf'), (req, res) => {
@@ -94,34 +267,317 @@ app.get('/room/:roomId', (req, res) => {
     pdfUrl: room.pdfUrl,
     scoreName: room.scoreName ?? 'Untitled Score',
     currentPage: room.currentPage ?? 0,
+    imslpSource: room.imslpSource ?? null,
   });
+});
+
+// ── IMSLP routes (keep in own section for easy removal) ───────────────────
+app.get('/imslp/search', async (req, res) => {
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  if (!imslp.checkUserSearchLimit(ip)) {
+    return res.status(429).json({ error: 'rate_limited', message: 'Max 5 IMSLP searches per minute. Please wait.' });
+  }
+  const q = ((req.query.q || '') + '').trim().slice(0, 200);
+  if (!q) return res.status(400).json({ error: 'missing_query', message: 'Query parameter q is required.' });
+  try {
+    const results = await imslp.searchIMSLP(q);
+    res.json({ results });
+  } catch (err) {
+    console.error('IMSLP search error:', err.message);
+    if ((err.message || '').includes('timed out')) {
+      return res.status(504).json({ error: 'imslp_timeout', message: 'IMSLP did not respond in time. Try again.' });
+    }
+    res.status(502).json({ error: 'imslp_error', message: 'Could not reach IMSLP. It may be temporarily unavailable.' });
+  }
+});
+
+app.post('/imslp/import', async (req, res) => {
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  if (!imslp.checkUserImportLimit(ip)) {
+    return res.status(429).json({ error: 'rate_limited', message: 'Max 3 IMSLP imports per minute. Please wait.' });
+  }
+  const { fileUrl, pageUrl, clientId, supabaseToken } = req.body;
+  if (!fileUrl) return res.status(400).json({ error: 'missing_url', message: 'fileUrl is required.' });
+
+  try {
+    const { filename, finalUrl, size } = await imslp.importFromUrl(fileUrl, UPLOADS_DIR);
+    const pdfFileUrl = `${req.protocol}://${req.get('host')}/uploads/${filename}`;
+
+    // Extract a human-readable score name from the CDN filename
+    let scoreName = 'IMSLP Score';
+    try {
+      const urlPath = new URL(finalUrl).pathname;
+      const basename = path.basename(decodeURIComponent(urlPath), '.pdf');
+      // CDN filenames look like "IMSLP22895-PMLP52387-Bruch_88a_1" — take the part after the second dash
+      const parts = basename.split('-');
+      if (parts.length >= 3) {
+        scoreName = parts.slice(2).join(' ').replace(/_/g, ' ').trim().slice(0, 100) || 'IMSLP Score';
+      } else if (basename.length > 4 && !basename.startsWith('Special')) {
+        scoreName = basename.replace(/[-_]/g, ' ').trim().slice(0, 100);
+      }
+    } catch {}
+
+    const roomId = uuidv4();
+    const hostToken = crypto.randomBytes(32).toString('hex');
+
+    let hostUserId = null;
+    if (supabaseToken) {
+      try { hostUserId = await verifySupabaseToken(supabaseToken); } catch {}
+    }
+
+    rooms[roomId] = {
+      shapes: [], messages: [], pdfUrl: pdfFileUrl, scoreName,
+      currentPage: 0, hostId: null, hostSockets: new Set(), raisedHands: [],
+      creatorId: null,
+      hostTokenHash: hashToken(hostToken),
+      hostClientId: clientId ?? null,
+      hostUserId,
+      imslpSource: {
+        pageUrl: pageUrl || fileUrl,
+        fileUrl: finalUrl,
+        importedAt: new Date().toISOString(),
+      },
+    };
+    saveRooms();
+    res.json({ roomId, hostToken, pdfUrl: pdfFileUrl, scoreName, imslpPageUrl: pageUrl || fileUrl });
+  } catch (err) {
+    console.error('IMSLP import error:', err.code, err.message);
+    const msg = err.message || 'Could not fetch file from IMSLP.';
+    switch (err.code) {
+      // Return the original fileUrl so the browser "Open on IMSLP" link is useful, not the intermediate redirect
+      case 'IMSLP_HTML_PAGE': return res.status(422).json({ error: 'imslp_html_page', message: msg, finalUrl: fileUrl });
+      case 'IS_ZIP':          return res.status(422).json({ error: 'is_zip', message: msg, finalUrl: fileUrl });
+      case 'HOST_NOT_ALLOWED':
+      case 'NO_HTTPS':        return res.status(400).json({ error: err.code, message: msg });
+      case 'PRIVATE_IP':      return res.status(400).json({ error: err.code, message: 'URL resolves to a disallowed address.' });
+      case 'NOT_FOUND':       return res.status(404).json({ error: err.code, message: msg });
+      case 'FORBIDDEN':       return res.status(403).json({ error: err.code, message: msg });
+      case 'TOO_LARGE':       return res.status(413).json({ error: err.code, message: msg });
+      case 'BAD_CONTENT_TYPE':return res.status(415).json({ error: err.code, message: msg });
+      default: return res.status(502).json({ error: 'upstream_error', message: 'Could not fetch file from IMSLP. It may require manual download.' });
+    }
+  }
+});
+
+// ── OMR (measure detection via Audiveris) ──────────────────────────────────
+// Results are cached per PDF file in data/omr/<pdf-stem>/ so rooms sharing a PDF share them.
+const omr = require('./omr');
+const OMR_DIR = path.join(DATA_DIR, 'omr');
+const omrJobs = {}; // pdf stem → { status: 'running' | 'error', error?, startedAt }
+
+// Resolve a room's PDF to a local file in uploads/, or null.
+function roomPdfFile(room) {
+  try {
+    const name = path.basename(new URL(room.pdfUrl).pathname);
+    if (!/^[\w-]+\.pdf$/i.test(name)) return null;
+    const file = path.join(UPLOADS_DIR, name);
+    return fs.existsSync(file) ? { file, stem: name.replace(/\.pdf$/i, '') } : null;
+  } catch { return null; }
+}
+
+function readOmrResult(stem) {
+  try { return JSON.parse(fs.readFileSync(path.join(OMR_DIR, stem, 'measures.json'), 'utf8')); } catch { return null; }
+}
+
+// Public OMR state for a room (sent to clients).
+function omrStateFor(room) {
+  const pdf = roomPdfFile(room);
+  const base = { highlightedMeasure: room.highlightedMeasure ?? null };
+  if (!pdf) return { ...base, status: 'unavailable', reason: 'PDF file not found on server' };
+  const job = omrJobs[pdf.stem];
+  if (job?.status === 'running') return { ...base, status: 'running', startedAt: job.startedAt, progress: job.progress ?? null };
+  const result = readOmrResult(pdf.stem);
+  if (result) {
+    return {
+      ...base, status: 'done', pages: result.pages, measureCount: result.measureCount,
+      hasMusicXml: fs.existsSync(path.join(OMR_DIR, pdf.stem, 'score.mxl')),
+    };
+  }
+  if (job?.status === 'error') return { ...base, status: 'error', error: job.error };
+  if (!omr.audiverisAvailable()) return { ...base, status: 'unavailable', reason: 'Audiveris is not installed on the server' };
+  return { ...base, status: 'none' };
+}
+
+// Send the current OMR state to every room that uses this PDF.
+function broadcastOmrState(stem) {
+  for (const [rid, room] of Object.entries(rooms)) {
+    if (roomPdfFile(room)?.stem === stem) io.to(rid).emit('omr-state', omrStateFor(room));
+  }
+}
+
+async function startOmrJob(pdf) {
+  if (omrJobs[pdf.stem]?.status === 'running') return;
+  omrJobs[pdf.stem] = { status: 'running', startedAt: Date.now() };
+  broadcastOmrState(pdf.stem);
+  const outDir = path.join(OMR_DIR, pdf.stem);
+  const workDir = path.join(outDir, 'work');
+  try {
+    fs.rmSync(workDir, { recursive: true, force: true });
+    const { omrPath, mxlPath } = await omr.runAudiveris(pdf.file, workDir, {
+      onProgress: (p) => { omrJobs[pdf.stem].progress = p; broadcastOmrState(pdf.stem); },
+    });
+    const result = await omr.extractMeasures(omrPath);
+    if (mxlPath) fs.copyFileSync(mxlPath, path.join(outDir, 'score.mxl'));
+    fs.writeFileSync(path.join(outDir, 'measures.json'), JSON.stringify(result));
+    fs.rmSync(workDir, { recursive: true, force: true });
+    delete omrJobs[pdf.stem];
+    console.log(`OMR done for ${pdf.stem}: ${result.measureCount} measures`);
+  } catch (err) {
+    console.error(`OMR failed for ${pdf.stem}:`, err.message, err.stderr?.slice(-500) || '');
+    omrJobs[pdf.stem] = { status: 'error', error: 'Measure detection failed. This score may be hard to read automatically.' };
+  }
+  broadcastOmrState(pdf.stem);
+}
+
+app.get('/omr/:roomId/musicxml', (req, res) => {
+  const room = rooms[req.params.roomId];
+  const pdf = room && roomPdfFile(room);
+  const file = pdf && path.join(OMR_DIR, pdf.stem, 'score.mxl');
+  if (!file || !fs.existsSync(file)) return res.status(404).json({ error: 'No MusicXML available' });
+  const name = (room.scoreName || 'score').replace(/[^\w\- ]+/g, '').trim() || 'score';
+  res.download(file, `${name}.mxl`);
 });
 
 function emitMemberCount(roomId) {
   const room = rooms[roomId];
-  if (!room || !room.hostId) return;
+  if (!room || !room.hostSockets || room.hostSockets.size === 0) return;
   const count = io.sockets.adapter.rooms.get(roomId)?.size ?? 0;
-  io.to(room.hostId).emit('room-members-count', count);
+  for (const hSid of room.hostSockets) {
+    if (io.sockets.sockets.get(hSid)) io.to(hSid).emit('room-members-count', count);
+  }
 }
 
+// ── Socket.IO ──────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
   let currentRoom = null;
+  let isHostSocket = false;    // set in join-room, used by all event handlers on this socket
+  let clientIdForSocket = '';  // stable clientId for this socket session
 
-  socket.on('join-room', (roomId) => {
+  socket.on('join-room', async (data) => {
+    const roomId = typeof data === 'string' ? data : data?.roomId;
+    const rawNick = typeof data === 'object' && data ? (data.nickname ?? '') : '';
+    const clientId = typeof data === 'object' && data ? (data.clientId ?? null) : null;
+    const hostToken = typeof data === 'object' && data ? (data.hostToken ?? null) : null;
+    const supabaseToken = typeof data === 'object' && data ? (data.supabaseToken ?? null) : null;
+
+    if (!roomId) return;
     socket.join(roomId);
     currentRoom = roomId;
     const room = rooms[roomId];
     if (!room) return;
-    const hostStillConnected = room.hostId && io.sockets.sockets.get(room.hostId);
-    if (!room.hostId || !hostStillConnected) room.hostId = socket.id;
+
+    clientIdForSocket = clientId || socket.id; // fallback for legacy clients
+    socketClientId[socket.id] = clientIdForSocket;
+    isHostSocket = false;
+    if (!room.hostSockets) room.hostSockets = new Set(); // defensive init
+
+    // === Host credential verification ===
+    if (room.hostTokenHash) {
+      // Room already has credentials — check in order: hostToken → Supabase token
+      if (hostToken && safeCompareHash(hashToken(hostToken), room.hostTokenHash)) {
+        isHostSocket = true;
+      } else if (supabaseToken && room.hostUserId) {
+        try {
+          const userId = await verifySupabaseToken(supabaseToken);
+          if (userId && userId === room.hostUserId) isHostSocket = true;
+        } catch {}
+      }
+    } else {
+      // Legacy room (no credentials yet).
+      // Synchronous check — atomic in the Node.js single-threaded event loop.
+      const anyHostConnected =
+        room.hostSockets.size > 0 &&
+        [...room.hostSockets].some((sid) => io.sockets.sockets.get(sid));
+
+      if (!anyHostConnected) {
+        isHostSocket = true;
+        room.hostClientId = clientIdForSocket;
+        const newToken = crypto.randomBytes(32).toString('hex');
+        room.hostTokenHash = hashToken(newToken);
+        // Return the token only to this socket — never broadcast
+        socket.emit('host-claimed', { hostToken: newToken });
+        if (supabaseToken) {
+          verifySupabaseToken(supabaseToken)
+            .then((userId) => { if (userId) { room.hostUserId = userId; saveRooms(); } })
+            .catch(() => {});
+        }
+      }
+    }
+
+    if (isHostSocket) {
+      room.hostSockets.add(socket.id);
+      room.hostId = socket.id;
+      saveRooms();
+    }
+
+    // Assign and deduplicate nickname
+    let nick = sanitizeNickname(rawNick) || 'Guest';
+    nick = deduplicateNickname(nick, roomId, clientIdForSocket);
+    socketNames[socket.id] = nick;
+
+    socket.emit('nickname-assigned', { nickname: nick });
+
+    // Dual-keyed nickname map: both socketId and clientId → name so
+    // annotation-layer consumers (by clientId) and raised-hand panel (by socketId) work without changes.
+    const nickMap = {};
+    for (const sid of io.sockets.adapter.rooms.get(roomId) || []) {
+      if (socketNames[sid]) {
+        nickMap[sid] = socketNames[sid];
+        if (socketClientId[sid]) nickMap[socketClientId[sid]] = socketNames[sid];
+      }
+    }
+    socket.emit('nickname-map', nickMap);
+
+    socket.to(roomId).emit('member-joined', {
+      socketId: socket.id,
+      clientId: clientIdForSocket,
+      nickname: nick,
+    });
+
     socket.emit('load-shapes', room.shapes);
     socket.emit('chat-history', room.messages || []);
     socket.emit('room-info', {
-      isHost: socket.id === room.hostId,
+      isHost: isHostSocket,
       raisedHands: room.raisedHands,
       currentPage: room.currentPage ?? 0,
     });
+    socket.emit('omr-state', omrStateFor(room));
     emitMemberCount(roomId);
+  });
+
+  // OMR: only the host may start measure detection (slow, CPU-heavy).
+  socket.on('omr-detect', (roomId) => {
+    const room = rooms[roomId];
+    if (!room || !isHostSocket) return;
+    const pdf = roomPdfFile(room);
+    if (!pdf || !omr.audiverisAvailable()) return socket.emit('omr-state', omrStateFor(room));
+    startOmrJob(pdf);
+  });
+
+  // Shared bar highlight: anyone in the room may set or clear it (n = measure number or null).
+  socket.on('measure-highlight', ({ roomId, n }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    if (n !== null && !(Number.isInteger(n) && n > 0 && n < 100000)) return;
+    room.highlightedMeasure = n;
+    socket.to(roomId).emit('measure-highlight', { n });
+  });
+
+  // Host "jump to measure" — everyone scrolls to that bar.
+  socket.on('measure-jump', ({ roomId, n }) => {
+    if (!rooms[roomId] || !isHostSocket) return;
+    if (!(Number.isInteger(n) && n > 0 && n < 100000)) return;
+    socket.to(roomId).emit('measure-jump', { n });
+  });
+
+  socket.on('rename', ({ roomId, nickname: rawNick }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    let nick = sanitizeNickname(rawNick) || socketNames[socket.id] || 'Guest';
+    nick = deduplicateNickname(nick, roomId, clientIdForSocket);
+    socketNames[socket.id] = nick;
+    socket.emit('nickname-assigned', { nickname: nick });
+    socket.to(roomId).emit('name-changed', { socketId: socket.id, clientId: clientIdForSocket, nickname: nick });
   });
 
   socket.on('new-shape', ({ roomId, shape }) => {
@@ -135,27 +591,24 @@ io.on('connection', (socket) => {
   socket.on('delete-shape', ({ roomId, id }) => {
     const room = rooms[roomId];
     if (!room) return;
-    const shape = room.shapes.find(s => s.id === id);
+    const shape = room.shapes.find((s) => s.id === id);
     if (shape) {
-      const isHost = socket.id === room.hostId;
-      const isOwner = shape.ownerId === socket.id;
-      if (!isHost && !isOwner) return;
-      room.shapes = room.shapes.filter(s => s.id !== id);
+      const isOwner = shape.ownerId === clientIdForSocket;
+      if (!isHostSocket && !isOwner) return;
+      room.shapes = room.shapes.filter((s) => s.id !== id);
       saveRooms();
     }
-    // Broadcast regardless (shape may not exist if pixel-erase already removed it).
     socket.to(roomId).emit('delete-shape', id);
   });
 
   socket.on('undo', ({ roomId, id }) => {
     const room = rooms[roomId];
     if (!room) return;
-    const shape = room.shapes.find(s => s.id === id);
+    const shape = room.shapes.find((s) => s.id === id);
     if (shape) {
-      const isHost = socket.id === room.hostId;
-      const isOwner = shape.ownerId === socket.id;
-      if (!isHost && !isOwner) return;
-      room.shapes = room.shapes.filter(s => s.id !== id);
+      const isOwner = shape.ownerId === clientIdForSocket;
+      if (!isHostSocket && !isOwner) return;
+      room.shapes = room.shapes.filter((s) => s.id !== id);
       saveRooms();
     }
     socket.to(roomId).emit('undo', id);
@@ -172,32 +625,36 @@ io.on('connection', (socket) => {
   socket.on('update-shape', ({ roomId, id, changes }) => {
     const room = rooms[roomId];
     if (!room) return;
-    room.shapes = room.shapes.map(s => s.id === id ? { ...s, ...changes } : s);
+    if (!isValidChanges(changes)) return;
+    const shape = room.shapes.find((s) => s.id === id);
+    if (shape) {
+      const isOwner = shape.ownerId === clientIdForSocket;
+      if (!isHostSocket && !isOwner) return;
+    }
+    room.shapes = room.shapes.map((s) => (s.id === id ? { ...s, ...changes } : s));
     saveRooms();
     socket.to(roomId).emit('update-shape', { id, changes });
   });
 
   socket.on('change-page', ({ roomId, page }) => {
     const room = rooms[roomId];
-    if (!room || socket.id !== room.hostId) return;
+    if (!room || !isHostSocket) return;
     room.currentPage = page;
     saveRooms();
     socket.to(roomId).emit('page-changed', page);
   });
 
   socket.on('scroll-sync', ({ roomId, ratio }) => {
-    const room = rooms[roomId];
-    if (!room || socket.id !== room.hostId) return;
+    if (!rooms[roomId] || !isHostSocket) return;
     socket.to(roomId).emit('scroll-sync', ratio);
   });
 
   socket.on('metronome-update', ({ roomId, state }) => {
-    const room = rooms[roomId];
-    if (!room || socket.id !== room.hostId) return;
+    if (!rooms[roomId] || !isHostSocket) return;
     socket.to(roomId).emit('metronome-update', state);
   });
 
-  // Laser pointer — no storage, pure broadcast.
+  // Laser pointer — no storage, pure relay
   socket.on('laser-move', ({ roomId, x, y, page }) => {
     socket.to(roomId).emit('laser-move', { socketId: socket.id, x, y, page });
   });
@@ -205,21 +662,28 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('laser-stop', { socketId: socket.id });
   });
 
-  // Raise / lower hand — broadcast to everyone in room including sender.
+  // Raise / lower hand
   socket.on('raise-hand', (roomId) => {
     const room = rooms[roomId];
     if (!room) return;
     if (!room.raisedHands.includes(socket.id)) room.raisedHands.push(socket.id);
-    io.to(roomId).emit('raise-hand', { socketId: socket.id });
+    io.to(roomId).emit('raise-hand', { socketId: socket.id, nickname: socketNames[socket.id] || 'Guest' });
   });
   socket.on('lower-hand', (roomId) => {
     const room = rooms[roomId];
     if (!room) return;
-    room.raisedHands = room.raisedHands.filter(id => id !== socket.id);
+    room.raisedHands = room.raisedHands.filter((id) => id !== socket.id);
     io.to(roomId).emit('lower-hand', { socketId: socket.id });
   });
+  // Host dismisses a specific participant's raised hand
+  socket.on('dismiss-hand', ({ roomId, socketId: targetId }) => {
+    const room = rooms[roomId];
+    if (!room || !isHostSocket) return;
+    room.raisedHands = room.raisedHands.filter((id) => id !== targetId);
+    io.to(roomId).emit('lower-hand', { socketId: targetId });
+  });
 
-  // Pitch detection — pure relay, never stored.
+  // Pitch detection — pure relay, never stored
   socket.on('pitch-update', ({ roomId, senderName, note, cents, freq, midi, timestamp }) => {
     if (!rooms[roomId]) return;
     if (typeof freq !== 'number' || typeof cents !== 'number') return;
@@ -235,14 +699,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('bookmark-add', ({ roomId, page }) => {
-    const room = rooms[roomId];
-    if (!room || typeof page !== 'number') return;
+    if (!rooms[roomId] || typeof page !== 'number') return;
     socket.to(roomId).emit('bookmark-add', { page });
   });
-
   socket.on('bookmark-remove', ({ roomId, page }) => {
-    const room = rooms[roomId];
-    if (!room || typeof page !== 'number') return;
+    if (!rooms[roomId] || typeof page !== 'number') return;
     socket.to(roomId).emit('bookmark-remove', { page });
   });
 
@@ -254,10 +715,10 @@ io.on('connection', (socket) => {
     const message = {
       id: uuidv4(),
       senderId: socket.id,
-      senderName: (senderName || 'Guest').slice(0, 64),
+      senderName: (socketNames[socket.id] || (senderName || 'Guest').trim() || 'Guest').slice(0, 64),
       text: trimmed,
       timestamp: new Date().toISOString(),
-      isHost: socket.id === room.hostId,
+      isHost: isHostSocket,
     };
     if (!room.messages) room.messages = [];
     room.messages.push(message);
@@ -270,20 +731,33 @@ io.on('connection', (socket) => {
     if (currentRoom === roomId) currentRoom = null;
     const room = rooms[roomId];
     if (room) {
-      room.raisedHands = room.raisedHands.filter(id => id !== socket.id);
+      room.raisedHands = room.raisedHands.filter((id) => id !== socket.id);
+      room.hostSockets.delete(socket.id);
+      if (room.hostSockets.size === 0) room.hostId = null;
+      else room.hostId = [...room.hostSockets][0];
       socket.to(roomId).emit('laser-stop', { socketId: socket.id });
       socket.to(roomId).emit('lower-hand', { socketId: socket.id });
+      socket.to(roomId).emit('member-left', { socketId: socket.id, clientId: clientIdForSocket });
       emitMemberCount(roomId);
     }
+    delete socketNames[socket.id];
+    delete socketClientId[socket.id];
   });
 
   socket.on('disconnect', () => {
     if (currentRoom && rooms[currentRoom]) {
-      rooms[currentRoom].raisedHands = rooms[currentRoom].raisedHands.filter(id => id !== socket.id);
+      const room = rooms[currentRoom];
+      room.raisedHands = room.raisedHands.filter((id) => id !== socket.id);
+      room.hostSockets.delete(socket.id);
+      if (room.hostSockets.size === 0) room.hostId = null;
+      else room.hostId = [...room.hostSockets][0];
       socket.to(currentRoom).emit('laser-stop', { socketId: socket.id });
       socket.to(currentRoom).emit('lower-hand', { socketId: socket.id });
+      socket.to(currentRoom).emit('member-left', { socketId: socket.id, clientId: clientIdForSocket });
       emitMemberCount(currentRoom);
     }
+    delete socketNames[socket.id];
+    delete socketClientId[socket.id];
   });
 });
 

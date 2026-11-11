@@ -15,7 +15,6 @@ interface Props {
 }
 
 const A4_PRESETS = [415, 432, 440, 442, 446];
-const DRAG_HANDLE = 'tuner-drag';
 
 function playTone(freq: number) {
   const ctx = new AudioContext();
@@ -77,7 +76,6 @@ export default function TunerPanel({ reading, error, instrument, a4Ref, onInstru
 
   const preset = INSTRUMENTS[instrument];
   const active = !!reading?.active;
-  const note = active ? `${reading!.note}${reading!.octave}` : '—';
   const cents = active ? reading!.cents : 0;
   const freq = active ? reading!.freq : 0;
 
@@ -110,9 +108,6 @@ export default function TunerPanel({ reading, error, instrument, a4Ref, onInstru
     setA4Input(String(a4Ref));
   }
 
-  const centsLabel = active
-    ? (cents >= 0 ? `+${cents}¢` : `${cents}¢`)
-    : '';
 
   return (
     <div

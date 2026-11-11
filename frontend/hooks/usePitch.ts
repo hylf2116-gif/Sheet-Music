@@ -30,6 +30,7 @@ export function usePitch(
   // Restart the stream when instrument changes (frequency range changes)
   useEffect(() => {
     if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the reading when the tuner is turned off
       setReading(null);
       setError(null);
       return;
@@ -94,7 +95,7 @@ export function usePitch(
       stream?.getTracks().forEach(t => t.stop());
       ctx?.close();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [enabled, instrument]); // a4Ref intentionally excluded — handled by ref
 
   return { reading, error };

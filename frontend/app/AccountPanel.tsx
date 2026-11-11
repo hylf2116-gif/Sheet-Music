@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { deleteSession, type RecentSession } from '../lib/sessions';
@@ -73,7 +73,8 @@ function ProfileTab({ user, onUserUpdated }: { user: User; onUserUpdated: (u: Us
     <div className="flex flex-col gap-6">
       {/* Avatar + identity */}
       <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-full bg-indigo-600 flex items-center justify-center text-xl font-bold text-white select-none shrink-0">
+        <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold text-white select-none shrink-0"
+          style={{ background: 'var(--accent)' }}>
           {initials}
         </div>
         <div className="min-w-0">
@@ -138,9 +139,14 @@ function SessionsTab({
   if (sessions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-        <span className="text-4xl">🎵</span>
-        <p className="text-sm text-gray-400 font-medium">No sessions yet</p>
-        <p className="text-xs text-gray-600">Sessions you create or join will appear here.</p>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
+          className="w-10 h-10" style={{ color: 'var(--t3)' }}>
+          <path d="M9 18V5l12-2v13"/>
+          <circle cx="6" cy="18" r="3"/>
+          <circle cx="18" cy="16" r="3"/>
+        </svg>
+        <p className="text-sm font-medium" style={{ color: 'var(--t2)' }}>No sessions yet</p>
+        <p className="text-xs" style={{ color: 'var(--t3)' }}>Sessions you create or join will appear here.</p>
       </div>
     );
   }
@@ -150,8 +156,14 @@ function SessionsTab({
       {sessions.map(s => (
         <div key={s.id}
           className="flex items-center gap-3 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] rounded-2xl px-4 py-3 transition-colors group">
-          <div className="w-8 h-8 rounded-xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center shrink-0 text-sm">
-            🎼
+          <div className="w-8 h-8 flex items-center justify-center shrink-0"
+            style={{ borderRadius: 'var(--r-sm)', background: 'var(--accent-bg)', border: '1px solid rgba(94,92,230,0.2)' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
+              className="w-3.5 h-3.5" style={{ color: 'var(--accent-fg)' }}>
+              <path d="M9 18V5l12-2v13"/>
+              <circle cx="6" cy="18" r="3"/>
+              <circle cx="18" cy="16" r="3"/>
+            </svg>
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-white truncate">{s.score_name}</p>
@@ -199,10 +211,22 @@ function SettingsTab({ theme, onThemeChange, onSignOut }: {
     onSignOut();
   }
 
-  const themeOptions: { value: Theme; label: string; icon: string }[] = [
-    { value: 'auto',  label: 'Auto',  icon: '💻' },
-    { value: 'dark',  label: 'Dark',  icon: '🌙' },
-    { value: 'light', label: 'Light', icon: '☀️'  },
+  const themeOptions: { value: Theme; label: string; icon: ReactNode }[] = [
+    { value: 'auto',  label: 'Auto',  icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+        <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/>
+      </svg>
+    )},
+    { value: 'dark',  label: 'Dark',  icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+    )},
+    { value: 'light', label: 'Light', icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+        <circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41"/>
+      </svg>
+    )},
   ];
 
   return (
@@ -218,7 +242,7 @@ function SettingsTab({ theme, onThemeChange, onSignOut }: {
                   ? 'bg-indigo-500/15 border-indigo-500/40 text-white'
                   : 'bg-white/[0.03] border-white/[0.06] text-gray-400 hover:bg-white/[0.07]'
               }`}>
-              <span>{opt.icon}</span>
+              {opt.icon}
               <span className="text-xs font-medium">{opt.label}</span>
             </button>
           ))}
