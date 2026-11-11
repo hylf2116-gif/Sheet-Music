@@ -197,6 +197,7 @@ export default function PitchTrace({ pitchReading, a4Ref, remotePitches, shareEn
   return (
     <div
       onMouseDown={startDrag}
+      className="phone-sheet"
       style={{
         position: 'fixed', left: pos.x, top: pos.y, zIndex: 50,
         width: 300, borderRadius: 14, overflow: 'hidden',

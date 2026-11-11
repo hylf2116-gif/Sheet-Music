@@ -36,7 +36,7 @@ export default function LayersPopover({
   return (
     <div
       ref={ref}
-      style={{
+      className="phone-sheet" style={{
         position: 'fixed',
         right: rightOffset + 56,
         top: '50%',

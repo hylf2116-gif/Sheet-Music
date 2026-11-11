@@ -96,7 +96,7 @@ export default function OMRPanel({
   else statusText = isHost ? 'Bars have not been detected for this score yet.' : 'The host has not detected bars for this score yet.';
 
   return (
-    <div ref={ref} style={{
+    <div ref={ref} className="phone-sheet" style={{
       position: 'fixed', right: rightOffset + 56, top: '50%', transform: 'translateY(-50%)', zIndex: 40,
       width: 260, backgroundColor: 'var(--modal-bg)', border: '1px solid var(--border-md)', borderRadius: 14,
       boxShadow: '0 8px 32px rgba(0,0,0,0.32)', backdropFilter: 'blur(18px) saturate(1.6)', padding: 12,

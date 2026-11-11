@@ -26,6 +26,7 @@ import { usePitch } from '../hooks/usePitch';
 import type { InstrumentKey } from '../lib/pitch';
 import SymbolPopover, { SYMBOL_SIZE_FACTOR, DEFAULT_SYMBOL_EM, makeSymbolAnnotation, isSymbolId, type SymbolSize } from './SymbolPalette';
 import type { SymbolId } from './symbols';
+import { usePhone, useNarrow } from './useMediaQuery';
 import OMRPanel, { type OmrState, type OmrPrefs, type OmrMeasure, DEFAULT_OMR_PREFS } from './OMRPanel';
 
 const OMR_PREFS_KEY = 'unino_omr_prefs';
@@ -55,6 +56,7 @@ const OWNER_COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4
 
 // ── Floating action cluster icons ─────────────────────────────────────────────
 const FC_ICONS: Record<string, React.ReactNode> = {
+  more: (<><circle cx="5" cy="12" r="1.6" fill="currentColor" /><circle cx="12" cy="12" r="1.6" fill="currentColor" /><circle cx="19" cy="12" r="1.6" fill="currentColor" /></>),
   pages:        (<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>),
   chat:         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
   metronome:    (<><path d="M12 22V8" /><path d="M5 22h14" /><path d="M9 8h6" /><path d="M12 4v4" /><path d="M8.5 15.5 12 8l3.5 7.5" /></>),
@@ -125,10 +127,26 @@ function FBtn({ icon, active, onClick, title, amber, badge, dot }: {
     );
 }
 
-function FloatingCluster(p: FloatingClusterProps) {
+function FloatingCluster(p: FloatingClusterProps & { compact?: boolean }) {
+  // On phones the cluster folds into one "more" button in the bottom-right corner.
+  const [open, setOpen] = useState(false);
+  if (p.compact && !open) {
+    return (
+      <div style={{
+        position: 'fixed', right: 12, bottom: 'calc(16px + env(safe-area-inset-bottom))', zIndex: 40,
+        background: 'rgba(18,18,26,0.84)', backdropFilter: 'blur(18px) saturate(1.6)',
+        borderRadius: 14, padding: 6, border: '1px solid rgba(255,255,255,0.09)', boxShadow: '0 8px 32px rgba(0,0,0,0.32)',
+      }}>
+        <FBtn icon="more" active={false} onClick={() => setOpen(true)} title="More tools"
+          badge={p.chatOpen ? 0 : p.chatUnread} />
+      </div>
+    );
+  }
   return (
-    <div style={{
-      position: 'fixed', right: p.rightOffset, top: '50%', transform: 'translateY(-50%)', transition: 'right 0.2s ease',
+    <div onClick={p.compact ? () => setOpen(false) : undefined} style={{
+      position: 'fixed', right: p.compact ? 12 : p.rightOffset,
+      ...(p.compact ? { bottom: 'calc(16px + env(safe-area-inset-bottom))' } : { top: '50%', transform: 'translateY(-50%)' }),
+      transition: 'right 0.2s ease',
       zIndex: 40, display: 'flex', flexDirection: 'column', gap: 2,
       background: 'rgba(18,18,26,0.84)', backdropFilter: 'blur(18px) saturate(1.6)',
       borderRadius: 14, padding: 6, border: '1px solid rgba(255,255,255,0.09)',
@@ -145,6 +163,7 @@ function FloatingCluster(p: FloatingClusterProps) {
       <FBtn icon="measures"  active={p.omrOpen}             onClick={p.onToggleOmr}          title="Measures (bar numbers, highlight, jump)" dot={p.omrRunning} />
       <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 2px' }} />
       <FBtn icon="download"  active={false}                 onClick={p.onExportPDF}          title="Export PDF" />
+      {p.compact && <FBtn icon="more" active onClick={() => setOpen(false)} title="Close" />}
     </div>
   );
 }
@@ -407,7 +426,11 @@ export default function Home() {
   const [participantCount, setParticipantCount] = useState(0);
 
   // Toolbar position
-  const [toolbarPos, setToolbarPosState] = useState<ToolbarPos>('top');
+  const [savedToolbarPos, setToolbarPosState] = useState<ToolbarPos>('top');
+  // Phones and iPad portrait always use the top bar; side bars are too wide for them.
+  const isPhone = usePhone();
+  const isNarrow = useNarrow();
+  const toolbarPos: ToolbarPos = isNarrow ? 'top' : savedToolbarPos;
   useEffect(() => {
     const saved = localStorage.getItem(POS_KEY) as ToolbarPos | null;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load saved settings after mount (localStorage is not available during server render)
@@ -1499,6 +1522,7 @@ export default function Home() {
   function exitSymbolTool() { setActiveTool('select'); }
   const toolbarProps = {
     pos: toolbarPos,
+    compact: isNarrow,
     onPosChange: changeToolbarPos,
     activeTool,
     setActiveTool,
@@ -1551,8 +1575,8 @@ export default function Home() {
 
   return (
     <div
-      className="flex overflow-hidden h-screen"
-      style={{ background: 'var(--app-bg)', color: 'var(--t)', flexDirection: toolbarPos === 'top' ? 'column' : 'row' }}
+      className="flex overflow-hidden"
+      style={{ height: '100dvh', background: 'var(--app-bg)', color: 'var(--t)', flexDirection: toolbarPos === 'top' ? 'column' : 'row' }}
     >
       {toolbarPos !== 'right' && <Toolbar key={toolbarPos} {...toolbarProps} />}
 
@@ -1644,6 +1668,7 @@ export default function Home() {
         omrRunning={omrState?.status === 'running'}
         onToggleOmr={() => setOmrOpen(o => !o)}
         onExportPDF={handleExportPDF}
+        compact={isPhone}
         rightOffset={
           chatOpen ? 314
           : toolbarPos === 'right' ? 206
@@ -1757,7 +1782,7 @@ export default function Home() {
       {!isHost && roomId && (
         <div style={{
           position: 'fixed', left: '50%', transform: 'translateX(-50%)', zIndex: 30,
-          top: toolbarPos === 'top' ? 62 : 12,
+          top: toolbarPos === 'top' ? (isNarrow ? 'calc(156px + env(safe-area-inset-top))' : 62) : 12,
         }}>
           {followTeacher ? (
             <button onClick={() => { followRef.current = false; setFollowTeacher(false); }}

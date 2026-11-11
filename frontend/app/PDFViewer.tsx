@@ -264,6 +264,12 @@ export default function PDFViewer({
   symbolCursorRef.current = symbolCursor;
   // Long-press (touch) opens the symbol menu.
   const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  // Touch scrolling while a drawing tool is active:
+  // - once an Apple Pencil has been used, the pencil draws and fingers scroll (palm rejection);
+  // - otherwise two fingers scroll and one finger draws.
+  const pencilSeenRef = useRef(false);
+  const panTouchesRef = useRef(new Map<number, { x: number; y: number }>());
+  const panningRef = useRef(false);
   const [laserCursor, setLaserCursor] = useState<{ x: number; y: number; page: number } | null>(null);
 
   // ── Drag / resize state ───────────────────────────────────────────────
@@ -798,8 +804,49 @@ export default function PDFViewer({
     if (longPressRef.current) { clearTimeout(longPressRef.current.timer); longPressRef.current = null; }
   }
 
+  function abortStroke() {
+    if (activeTool === 'eraser' && drawing) onEraseEnd?.();
+    setDrawing(false); setStart(null); setCurrentPoints([]); setPreview(null);
+  }
+
+  // Returns true when this touch is used for scrolling instead of drawing.
+  function handlePanDown(e: React.PointerEvent): boolean {
+    if (e.pointerType === 'pen') { pencilSeenRef.current = true; return false; }
+    if (e.pointerType !== 'touch' || activeTool === 'select') return false;
+    const touches = panTouchesRef.current;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pencilSeenRef.current || touches.size >= 2) {
+      if (!panningRef.current) { panningRef.current = true; cancelLongPress(); abortStroke(); }
+      try { (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId); } catch {}
+      return true;
+    }
+    return false;
+  }
+
+  function handlePanMove(e: React.PointerEvent): boolean {
+    const touches = panTouchesRef.current;
+    const prev = touches.get(e.pointerId);
+    if (!prev) return false;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!panningRef.current) return false;
+    const n = touches.size;
+    containerRef.current?.scrollBy((prev.x - e.clientX) / n, (prev.y - e.clientY) / n);
+    onUserScroll?.();
+    return true;
+  }
+
+  function handlePanUp(e: React.PointerEvent): boolean {
+    const touches = panTouchesRef.current;
+    if (!touches.delete(e.pointerId)) return false;
+    const wasPanning = panningRef.current;
+    if (touches.size === 0) panningRef.current = false;
+    if (wasPanning) { try { (e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId); } catch {} }
+    return wasPanning;
+  }
+
   function onPointerDown(e: React.PointerEvent, pageIndex: number) {
     if (e.button !== 0) return;
+    if (handlePanDown(e)) return;
     // Touch long-press (iPad) opens the symbol menu at that spot, from any tool.
     if (e.pointerType === 'touch' && onSymbolMenu) {
       cancelLongPress();
@@ -854,6 +901,7 @@ export default function PDFViewer({
   }
 
   function onPointerMove(e: React.PointerEvent, pageIndex: number) {
+    if (handlePanMove(e)) return;
     // A finger that moves is drawing, not long-pressing.
     if (longPressRef.current && Math.hypot(e.clientX - longPressRef.current.x, e.clientY - longPressRef.current.y) > 8) {
       cancelLongPress();
@@ -953,6 +1001,7 @@ export default function PDFViewer({
 
   function onPointerUp(e: React.PointerEvent, pageIndex: number) {
     cancelLongPress();
+    if (handlePanUp(e)) return;
     try { (e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId); } catch {}
 
     // ── Finalize drag / resize ─────────────────────────────────────────
@@ -1060,7 +1109,7 @@ export default function PDFViewer({
   }
 
   return (
-    <div ref={containerRef} className="overflow-y-auto h-full bg-[#f5f5f7] flex flex-col items-center gap-8 py-8 px-4">
+    <div ref={containerRef} className="overflow-y-auto h-full bg-[#f5f5f7] flex flex-col items-center gap-4 sm:gap-8 py-4 sm:py-8 px-2 sm:px-4">
       {pageMetas.map((meta, pageIndex) => {
         const asp = meta.height / meta.width;
         // Handle radius in normalized x-axis units; ry corrects for aspect ratio.
@@ -1128,6 +1177,7 @@ export default function PDFViewer({
                 onPointerDown={e => onPointerDown(e, pageIndex)}
                 onPointerMove={e => onPointerMove(e, pageIndex)}
                 onPointerUp={e => onPointerUp(e, pageIndex)}
+                onPointerCancel={e => { cancelLongPress(); handlePanUp(e); }}
                 onContextMenu={e => {
                   // Right-click opens the symbol menu at that spot, from any tool.
                   if (!onSymbolMenu) return;

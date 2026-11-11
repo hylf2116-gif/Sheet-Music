@@ -79,7 +79,7 @@ export default function ThumbnailPanel({
 
   return (
     <div
-      className="unino-panel flex flex-col shrink-0"
+      className="unino-panel phone-drawer flex flex-col shrink-0"
       style={{
         width: 160,
         height: '100%',

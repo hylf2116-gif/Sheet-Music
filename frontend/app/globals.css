@@ -351,3 +351,32 @@ body {
   background:   var(--surface-hover);
   border-color: var(--border-md);
 }
+
+/* Horizontal tool rows on phones/iPad: scrollable without a visible scrollbar */
+.no-scrollbar { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Phones: floating panels become a bottom sheet, the thumbnail list a left drawer */
+@media (max-width: 767px) {
+  .phone-sheet {
+    position: fixed !important;
+    left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important;
+    transform: none !important;
+    width: 100% !important; max-width: 100% !important;
+    max-height: 75dvh !important;
+    overflow-y: auto !important;
+    z-index: 60 !important;
+    border-radius: 18px 18px 0 0 !important;
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.25) !important;
+  }
+  .unino-panel.phone-sheet { height: 70dvh !important; }
+  .phone-drawer {
+    position: fixed !important;
+    left: 0 !important; top: 0 !important; bottom: 0 !important;
+    width: 150px !important;
+    z-index: 60 !important;
+    padding-top: env(safe-area-inset-top);
+    box-shadow: 8px 0 32px rgba(0,0,0,0.25) !important;
+  }
+}

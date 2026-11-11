@@ -729,7 +729,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
   // ── Full panel ────────────────────────────────────────────────────────────
 
   return (
-    <div ref={panelRef} className="fixed z-50 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+    <div ref={panelRef} className="phone-sheet fixed z-50 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
       style={{
         left: panelPos.x < 0 ? 'auto' : panelPos.x,
         top: panelPos.y < 0 ? 'auto' : panelPos.y,

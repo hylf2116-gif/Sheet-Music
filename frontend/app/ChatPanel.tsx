@@ -47,7 +47,7 @@ export default function ChatPanel({ messages, mySocketId, onSend, onClose }: Pro
 
   return (
     <div
-      className="unino-panel flex flex-col shrink-0"
+      className="unino-panel phone-sheet flex flex-col shrink-0"
       style={{
         width: 300,
         height: '100%',

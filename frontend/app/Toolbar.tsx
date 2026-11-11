@@ -60,6 +60,8 @@ export interface ToolbarProps {
   nickname?: string;
   onRename?: () => void;
   onOpenHandsPanel?: () => void;
+  // Phone layout: two rows (status + tools) with larger touch targets
+  compact?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -168,8 +170,8 @@ export default function Toolbar(p: ToolbarProps) {
       );
     }
     return (
-      <button onClick={() => p.setActiveTool(id)} title={label}
-        className={`w-9 h-9 rounded-lg ${base} ${
+      <button onClick={() => p.setActiveTool(id)} title={label} aria-label={label}
+        className={`${p.compact ? 'w-10 h-10' : 'w-9 h-9'} rounded-lg shrink-0 ${base} ${
           laser  ? active ? 'bg-red-50 text-red-500' : 'text-gray-500 hover:bg-red-50 hover:text-red-500'
                  : active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
         }`}>
@@ -179,12 +181,13 @@ export default function Toolbar(p: ToolbarProps) {
   }
 
   function ColorRow() {
+    const dotSize = p.compact ? 26 : p.pos === 'top' ? 18 : 17;
     return (
-      <div className={`flex flex-wrap gap-1.5 ${p.pos !== 'top' ? 'px-2 pt-1' : ''}`}>
+      <div className={`flex ${p.compact ? 'gap-2.5' : 'gap-1.5'} ${p.pos === 'top' ? 'shrink-0' : 'flex-wrap px-2 pt-1'}`}>
         {PRESET_COLORS.map(c => (
           <button key={c} onClick={() => p.setColor(c)}
             className="rounded-full transition-transform hover:scale-110 shrink-0"
-            style={{ width: p.pos === 'top' ? 18 : 17, height: p.pos === 'top' ? 18 : 17 }}>
+            style={{ width: dotSize, height: dotSize }}>
             <span className="block w-full h-full rounded-full" style={{
               backgroundColor: c,
               boxShadow: p.color === c ? `0 0 0 2px white, 0 0 0 3.5px ${c}` : 'inset 0 0 0 1px rgba(0,0,0,0.12)',
@@ -192,7 +195,7 @@ export default function Toolbar(p: ToolbarProps) {
           </button>
         ))}
         <label className="rounded-full cursor-pointer transition-transform hover:scale-110 shrink-0"
-          style={{ width: p.pos === 'top' ? 18 : 17, height: p.pos === 'top' ? 18 : 17 }}>
+          style={{ width: dotSize, height: dotSize }}>
           <span className="block w-full h-full rounded-full" style={{
             background: isCustom ? p.color : 'conic-gradient(#ff3b30,#ff9500,#ffcc00,#34c759,#007aff,#af52de,#ff3b30)',
             boxShadow: isCustom ? `0 0 0 2px white, 0 0 0 3.5px ${p.color}` : 'inset 0 0 0 1px rgba(0,0,0,0.12)',
@@ -207,10 +210,10 @@ export default function Toolbar(p: ToolbarProps) {
     const isHl = p.activeTool === 'highlight';
     const sizes = isHl ? HIGHLIGHTER_SIZES : STROKE_SIZES;
     return (
-      <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'px-2 pb-1' : ''}`}>
+      <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'px-2 pb-1' : 'shrink-0'}`}>
         {sizes.map(s => (
           <button key={s.label} onClick={() => p.setStrokeWidth(s.w)} title={s.label}
-            className={`rounded-lg flex items-center justify-center transition-colors ${p.pos === 'top' ? 'w-7 h-7' : 'flex-1 h-7'} ${
+            className={`rounded-lg flex items-center justify-center transition-colors shrink-0 ${p.compact ? 'w-10 h-10' : p.pos === 'top' ? 'w-7 h-7' : 'flex-1 h-7'} ${
               p.strokeWidth === s.w ? 'bg-black/[0.08]' : 'hover:bg-black/[0.04]'
             }`}>
             <span className={isHl ? 'rounded-sm' : 'rounded-full bg-gray-600'} style={{
@@ -226,7 +229,7 @@ export default function Toolbar(p: ToolbarProps) {
   // Highlighter opacity slider (10%–90%).
   function OpacityRow() {
     return (
-      <div className={`flex items-center gap-1.5 ${p.pos !== 'top' ? 'px-2 pb-1.5' : ''}`} title="Highlighter opacity">
+      <div className={`flex items-center gap-1.5 shrink-0 ${p.pos !== 'top' ? 'px-2 pb-1.5' : ''}`} title="Highlighter opacity">
         <span className="text-[10px] text-gray-500 select-none">Opacity</span>
         <input type="range" min={10} max={90} step={5} aria-label="Highlighter opacity"
           value={Math.round(p.highlighterOpacity * 100)}
@@ -286,7 +289,7 @@ export default function Toolbar(p: ToolbarProps) {
           style={{ background: p.pos !== 'top' ? 'rgba(0,0,0,0.04)' : undefined }}>
           {(['stroke', 'pixel'] as const).map(m => (
             <button key={m} onClick={() => p.setEraserMode(m)}
-              className={`px-2.5 h-7 rounded-lg text-xs font-medium transition-colors ${
+              className={`px-2.5 ${p.compact ? 'h-9 px-4 text-sm' : 'h-7'} rounded-lg text-xs font-medium transition-colors ${
                 p.eraserMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
               }`}>
               {m === 'stroke' ? 'Stroke' : 'Pixel'}
@@ -387,6 +390,70 @@ export default function Toolbar(p: ToolbarProps) {
   // TOP BAR
   // ─────────────────────────────────────────────────────────────────────────
 
+  if (p.pos === 'top' && p.compact) {
+    const iconBtn = 'w-10 h-10 rounded-lg flex items-center justify-center text-gray-600 active:bg-black/[0.06] disabled:opacity-30 transition-colors shrink-0';
+    const contextRow = isAnnotate && (isDraw || p.activeTool === 'eraser');
+    return (
+      <div className="flex flex-col select-none shrink-0"
+        style={{ width: '100%', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px) saturate(1.8)', borderBottom: '1px solid rgba(0,0,0,0.06)', paddingTop: 'env(safe-area-inset-top)' }}>
+        {/* Row 1: home, room status, share */}
+        <div className="flex items-center gap-1 px-2" style={{ height: 48 }}>
+          <button onClick={p.onGoHome} aria-label="Home" className={`${iconBtn} text-indigo-600`}>
+            <Icon name="music" size={19} />
+          </button>
+          {p.nickname && (
+            <button onClick={p.onRename} title="Change name"
+              className="text-xs text-gray-500 rounded-md px-1.5 py-1 truncate min-w-0 max-w-[110px]">
+              {p.isHost ? '👑 ' : ''}{p.nickname}
+            </button>
+          )}
+          <span className="text-[11px] text-gray-400 tabular-nums shrink-0">👥 {p.participantCount}</span>
+          <div className="flex-1" />
+          {p.isHost ? (
+            <>
+              <button onClick={p.onToggleScrollSync} aria-label={p.scrollSyncEnabled ? 'Scroll sync on' : 'Scroll sync off'}
+                className={`${iconBtn} ${p.scrollSyncEnabled ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'}`}>
+                <Icon name="sync" size={16} />
+              </button>
+              {p.raisedHands.length > 0 && (
+                <button onClick={p.onOpenHandsPanel}
+                  className="text-xs font-semibold text-amber-700 bg-amber-100 rounded-full px-2 py-1 shrink-0">
+                  ✋{p.raisedHands.length}
+                </button>
+              )}
+            </>
+          ) : (
+            <button onClick={p.onToggleHand} aria-label={p.handRaised ? 'Lower hand' : 'Raise hand'}
+              className={`h-9 px-2.5 rounded-lg text-sm shrink-0 ${p.handRaised ? 'bg-amber-100 text-amber-700' : 'text-gray-500'}`}>
+              ✋{p.handRaised ? ' Lower' : ''}
+            </button>
+          )}
+          <button onClick={p.onCopyLink} aria-label="Copy share link"
+            className={`flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-medium shrink-0 ${
+              p.copied ? 'bg-green-500 text-white' : 'bg-gray-900 text-white'
+            }`}>
+            <Icon name={p.copied ? 'check' : 'link'} size={15} />
+            {p.copied ? 'Copied' : 'Share'}
+          </button>
+        </div>
+        {/* Row 2: tools (swipe sideways for more) + undo/redo/clear */}
+        <div className="flex items-center gap-0.5 px-2 overflow-x-auto no-scrollbar" style={{ height: 50, borderTop: '1px solid rgba(0,0,0,0.04)' }}>
+          {ANNOTATE_TOOLS.map(t => <ToolBtn key={t.id} id={t.id} label={t.label} />)}
+          <Divider />
+          <button onClick={p.onUndo} disabled={!p.canUndo} aria-label="Undo" className={iconBtn}><Icon name="undo" size={18} /></button>
+          <button onClick={p.onRedo} disabled={!p.canRedo} aria-label="Redo" className={iconBtn}><Icon name="redo" size={18} /></button>
+          <button onClick={p.onClearAll} aria-label="Clear all" className={`${iconBtn} hover:text-red-500`}><Icon name="trash" size={18} /></button>
+        </div>
+        {/* Row 3: options for the current tool */}
+        {contextRow && (
+          <div className="flex items-center gap-1 px-3 overflow-x-auto no-scrollbar" style={{ height: 48, borderTop: '1px solid rgba(0,0,0,0.04)' }}>
+            <ContextPanel />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (p.pos === 'top') {
     return (
       <div className="flex flex-col select-none shrink-0"
@@ -396,7 +463,8 @@ export default function Toolbar(p: ToolbarProps) {
         <div className="flex items-center" style={{ height: 52 }}>
 
           {/* LEFT: logo + annotation tools + undo/clear + page nav */}
-          <div className="flex items-center gap-0.5 px-3 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
+          {/* On narrower screens (iPad portrait) this part scrolls sideways instead of cutting tools off */}
+          <div className="flex items-center gap-0.5 px-3 min-w-0 overflow-x-auto no-scrollbar" style={{ flex: '1 1 0' }}>
             <button onClick={p.onGoHome}
               className="flex items-center gap-2 pl-1 pr-3 h-9 rounded-lg text-gray-800 hover:bg-black/[0.04] transition-colors shrink-0">
               <Icon name="music" size={17} />

@@ -112,6 +112,7 @@ export default function TunerPanel({ reading, error, instrument, a4Ref, onInstru
   return (
     <div
       onMouseDown={startDrag}
+      className="phone-sheet"
       style={{
         position: 'fixed', left: pos.x, top: pos.y, zIndex: 50,
         width: 300, borderRadius: 16, overflow: 'hidden',
