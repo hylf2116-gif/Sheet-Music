@@ -65,17 +65,49 @@ async function verifySupabaseToken(accessToken) {
   });
 }
 
+// ── Settings (environment variables; defaults are for local development) ────
+// PORT             port to listen on (hosts like Railway set this automatically)
+// FRONTEND_ORIGIN  website address(es) allowed to connect, comma-separated
+// DATA_DIR         folder for rooms.json, OMR results and uploads (point it at a persistent volume online)
+// ENABLE_OMR       'false' turns measure detection off (online servers have no Audiveris)
+const PORT = Number(process.env.PORT) || 3001;
+const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGIN || 'http://localhost:3000')
+  .split(',').map((s) => s.trim().replace(/\/+$/, '')).filter(Boolean);
+const OMR_ENABLED = process.env.ENABLE_OMR !== 'false';
+
 // ── Express + Socket.IO setup ──────────────────────────────────────────────
 const app = express();
-app.use(cors());
-app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Behind a hosting proxy (HTTPS is handled by the host): trust it for the real client IP.
+app.set('trust proxy', 1);
+app.use(cors({ origin: FRONTEND_ORIGINS }));
+app.use(express.json({ limit: '1mb' }));
 
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 const ROOMS_FILE = path.join(DATA_DIR, 'rooms.json');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// With DATA_DIR set (online), uploads live on the same volume; locally they stay in backend/uploads.
+const UPLOADS_DIR = process.env.DATA_DIR ? path.join(DATA_DIR, 'uploads') : path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+app.use('/uploads', express.static(UPLOADS_DIR));
+
+// Simple per-IP limit for expensive routes (in memory; fine for a single server).
+function rateLimit(max, windowMs, message) {
+  const hits = new Map();
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = req.ip || 'unknown';
+    const h = hits.get(key);
+    if (!h || now - h.start > windowMs) { hits.set(key, { start: now, count: 1 }); return next(); }
+    if (h.count >= max) return res.status(429).json({ error: message });
+    h.count += 1;
+    next();
+  };
+}
+const uploadLimit = rateLimit(20, 60 * 60 * 1000, 'Too many uploads. Try again in an hour.');
+const createRoomLimit = rateLimit(60, 60 * 60 * 1000, 'Too many new rooms. Try again in an hour.');
+
+// Health check for the hosting platform.
+app.get('/health', (req, res) => res.json({ ok: true }));
 
 // Recursively verify all numeric values are finite (NaN serialises to null in JSON).
 function isValidChanges(obj) {
@@ -199,7 +231,8 @@ const upload = multer({
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: 'http://localhost:3000', methods: ['GET', 'POST'] },
+  cors: { origin: FRONTEND_ORIGINS, methods: ['GET', 'POST'] },
+  maxHttpBufferSize: 2e6, // largest single message (a long pen stroke is well below this)
 });
 
 const rooms = loadRooms();
@@ -228,8 +261,14 @@ function deduplicateNickname(name, roomId, excludeClientId) {
 const imslp = require('./imslp');
 
 // ── HTTP routes ────────────────────────────────────────────────────────────
-app.post('/create-room', async (req, res) => {
-  const { pdfUrl, scoreName, creatorId, clientId, supabaseToken } = req.body;
+app.post('/create-room', createRoomLimit, async (req, res) => {
+  const { pdfUrl, scoreName: rawScoreName, creatorId, clientId, supabaseToken } = req.body || {};
+  // Only PDFs uploaded to this server, and only if the file exists.
+  if (typeof pdfUrl !== 'string' || !/^\/uploads\/[\w-]+\.pdf$/i.test(pdfUrl)
+      || !fs.existsSync(path.join(UPLOADS_DIR, path.basename(pdfUrl)))) {
+    return res.status(400).json({ error: 'Upload the PDF first.' });
+  }
+  const scoreName = typeof rawScoreName === 'string' ? rawScoreName.trim().slice(0, 120) : undefined;
   const roomId = uuidv4();
   const hostToken = crypto.randomBytes(32).toString('hex');
 
@@ -257,7 +296,7 @@ app.post('/create-room', async (req, res) => {
   res.json({ roomId, hostToken });
 });
 
-app.post('/upload', (req, res, next) => {
+app.post('/upload', uploadLimit, (req, res, next) => {
   // Turn multer errors (too large, not a PDF) into clear JSON instead of an HTML error page.
   upload.single('pdf')(req, res, (err) => {
     if (!err) return next();
@@ -268,7 +307,8 @@ app.post('/upload', (req, res, next) => {
   });
 }, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+  // Path only (no server name), so stored links keep working if the address changes.
+  const fileUrl = `/uploads/${req.file.filename}`;
   const scoreName = req.file.originalname.replace(/\.pdf$/i, '').trim() || 'Untitled Score';
   res.json({ url: fileUrl, filename: req.file.filename, scoreName });
 });
@@ -314,7 +354,7 @@ app.post('/imslp/import', async (req, res) => {
 
   try {
     const { filename, finalUrl, size } = await imslp.importFromUrl(fileUrl, UPLOADS_DIR);
-    const pdfFileUrl = `${req.protocol}://${req.get('host')}/uploads/${filename}`;
+    const pdfFileUrl = `/uploads/${filename}`;
 
     // Extract a human-readable score name from the CDN filename
     let scoreName = 'IMSLP Score';
@@ -381,7 +421,8 @@ const omrJobs = {}; // pdf stem → { status: 'running' | 'error', error?, start
 // Resolve a room's PDF to a local file in uploads/, or null.
 function roomPdfFile(room) {
   try {
-    const name = path.basename(new URL(room.pdfUrl).pathname);
+    // pdfUrl is '/uploads/<file>.pdf' (or a full URL in older rooms).
+    const name = path.basename(new URL(room.pdfUrl, 'http://local').pathname);
     if (!/^[\w-]+\.pdf$/i.test(name)) return null;
     const file = path.join(UPLOADS_DIR, name);
     return fs.existsSync(file) ? { file, stem: name.replace(/\.pdf$/i, '') } : null;
@@ -407,6 +448,7 @@ function omrStateFor(room) {
     };
   }
   if (job?.status === 'error') return { ...base, status: 'error', error: job.error };
+  if (!OMR_ENABLED) return { ...base, status: 'unavailable', reason: 'Measure detection is only available in the local version.' };
   if (!omr.audiverisAvailable()) return { ...base, status: 'unavailable', reason: 'Audiveris is not installed on the server' };
   return { ...base, status: 'none' };
 }
@@ -563,7 +605,7 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room || !isHostSocket) return;
     const pdf = roomPdfFile(room);
-    if (!pdf || !omr.audiverisAvailable()) return socket.emit('omr-state', omrStateFor(room));
+    if (!pdf || !OMR_ENABLED || !omr.audiverisAvailable()) return socket.emit('omr-state', omrStateFor(room));
     startOmrJob(pdf);
   });
 
@@ -792,4 +834,8 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(3001, () => console.log('Server running on port 3001'));
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Allowed website(s): ${FRONTEND_ORIGINS.join(', ')}`);
+  console.log(`Data folder: ${DATA_DIR} | uploads: ${UPLOADS_DIR} | OMR: ${OMR_ENABLED ? 'on' : 'off'}`);
+});

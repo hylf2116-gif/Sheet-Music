@@ -1,5 +1,7 @@
 'use client';
 
+import { backendUrl } from '../lib/config';
+
 import { useState, useRef } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
@@ -53,7 +55,7 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
     try {
       let res: Response;
       try {
-        res = await fetch(`http://localhost:3001/imslp/search?q=${encodeURIComponent(q)}`);
+        res = await fetch(backendUrl(`/imslp/search?q=${encodeURIComponent(q)}`));
       } catch {
         setSearchError('Could not reach our server. Check your connection.');
         return;
@@ -97,7 +99,7 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
 
       let res: Response;
       try {
-        res = await fetch('http://localhost:3001/imslp/import', {
+        res = await fetch(backendUrl('/imslp/import'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fileUrl: url, clientId, supabaseToken }),

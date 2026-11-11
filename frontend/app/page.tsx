@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { BACKEND_URL, backendUrl, resolvePdfUrl } from '../lib/config';
 import PDFViewer from './PDFViewer';
 import MetronomePanel, { type MetronomeState } from './MetronomePanel';
 import Toolbar, { type ToolbarPos } from './Toolbar';
@@ -36,7 +37,7 @@ type HistoryOp =
   | { kind: 'delete'; ann: any }
   | { kind: 'update'; id: string; before: any; after: any };
 
-const socket = io('http://localhost:3001');
+const socket = io(BACKEND_URL);
 const POS_KEY = 'unino_toolbar_pos';
 
 function getOrCreateClientId(): string {
@@ -743,12 +744,12 @@ export default function Home() {
     const cleanId = match ? match[1] : rid.trim();
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:3001/room/${cleanId}`);
+      const res = await fetch(backendUrl(`/room/${cleanId}`));
       if (!res.ok) { alert('Room not found!'); setLoading(false); return; }
       const data = await res.json();
       const sn = data.scoreName || 'Untitled Score';
       setScoreName(sn);
-      setPdfUrl(data.pdfUrl);
+      setPdfUrl(resolvePdfUrl(data.pdfUrl));
       setCurrentPage(data.currentPage ?? 0);
       setImslpSource(data.imslpSource ?? null);
       setRoomId(cleanId);
@@ -780,7 +781,7 @@ export default function Home() {
     let url = '';
     let uploadedName: string | undefined;
     try {
-      const uploadRes = await fetch('http://localhost:3001/upload', { method: 'POST', body: formData });
+      const uploadRes = await fetch(backendUrl('/upload'), { method: 'POST', body: formData });
       const body = await uploadRes.json().catch(() => ({}));
       if (!uploadRes.ok || !body.url) throw new Error(body.error || 'Upload failed. Try again.');
       url = body.url;
@@ -798,14 +799,14 @@ export default function Home() {
     if (user) {
       try { const { data } = await supabase.auth.getSession(); supabaseToken = data.session?.access_token ?? null; } catch {}
     }
-    const res = await fetch('http://localhost:3001/create-room', {
+    const res = await fetch(backendUrl('/create-room'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pdfUrl: url, scoreName: sn, creatorId: user?.id ?? null, clientId: myClientId, supabaseToken }),
     });
     const { roomId: rid, hostToken } = await res.json();
     try { localStorage.setItem(`unino_host_${rid}`, hostToken); } catch {};
-    setPdfUrl(url);
+    setPdfUrl(resolvePdfUrl(url));
     setCurrentPage(0);
     setRoomId(rid);
     roomIdRef.current = rid;
@@ -822,7 +823,7 @@ export default function Home() {
   function handleIMSLPImport(data: { roomId: string; hostToken: string; pdfUrl: string; scoreName: string; imslpPageUrl?: string }) {
     try { localStorage.setItem(`unino_host_${data.roomId}`, data.hostToken); } catch {}
     setScoreName(data.scoreName);
-    setPdfUrl(data.pdfUrl);
+    setPdfUrl(resolvePdfUrl(data.pdfUrl));
     setCurrentPage(0);
     setRoomId(data.roomId);
     roomIdRef.current = data.roomId;
@@ -950,7 +951,7 @@ export default function Home() {
   }
 
   function copyLink() {
-    navigator.clipboard.writeText(`http://localhost:3000?room=${roomId}`);
+    navigator.clipboard.writeText(`${window.location.origin}/?room=${roomId}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -1799,7 +1800,7 @@ export default function Home() {
           state={omrState}
           isHost={isHost}
           prefs={omrPrefs}
-          musicXmlUrl={`http://localhost:3001/omr/${roomId}/musicxml`}
+          musicXmlUrl={backendUrl(`/omr/${roomId}/musicxml`)}
           rightOffset={
             chatOpen ? 314
             : toolbarPos === 'right' ? 206

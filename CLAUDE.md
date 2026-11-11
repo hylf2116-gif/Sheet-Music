@@ -20,6 +20,10 @@ PDF score through a shared link and annotate it together in real time.
 - OMR: `scripts/omr-test/run_omr.sh` + `INSTALL.md` (Audiveris → MusicXML + measure bounding boxes).
 - `supabase_migration_recent_sessions.sql` at the root (recent sessions table).
 
+## Deploy
+See `DEPLOY.md` (Vercel frontend + Railway backend with a volume). Settings: `NEXT_PUBLIC_BACKEND_URL` (frontend);
+`PORT`, `FRONTEND_ORIGIN`, `DATA_DIR`, `ENABLE_OMR` (backend). PDFs are stored as `/uploads/<file>.pdf` (path only).
+
 ## Run locally
 Backend (terminal 1):
     cd ~/sheet-music-platform/backend && node index.js     # http://localhost:3001
