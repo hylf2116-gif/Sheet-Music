@@ -227,6 +227,7 @@ export default function Home() {
   const [joinCode, setJoinCode] = useState('');
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   // Undo/redo history. Each entry is a group of changes undone/redone together
   // (one drawing = one group; one whole eraser swipe = one group).
   const [undoStack, setUndoStack] = useState<HistoryOp[][]>([]);
@@ -766,11 +767,31 @@ export default function Home() {
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploadError('');
+    // Same limit as the server (50 MB); checked here too so big files fail instantly.
+    if (file.size > 50 * 1024 * 1024) {
+      setUploadError('This PDF is larger than 50 MB. Try a smaller file.');
+      e.target.value = '';
+      return;
+    }
     setLoading(true);
     const formData = new FormData();
     formData.append('pdf', file);
-    const uploadRes = await fetch('http://localhost:3001/upload', { method: 'POST', body: formData });
-    const { url, scoreName: uploadedName } = await uploadRes.json();
+    let url = '';
+    let uploadedName: string | undefined;
+    try {
+      const uploadRes = await fetch('http://localhost:3001/upload', { method: 'POST', body: formData });
+      const body = await uploadRes.json().catch(() => ({}));
+      if (!uploadRes.ok || !body.url) throw new Error(body.error || 'Upload failed. Try again.');
+      url = body.url;
+      uploadedName = body.scoreName;
+    } catch (err) {
+      // Never create a room without a PDF.
+      setUploadError(err instanceof Error && err.message !== 'Failed to fetch' ? err.message : 'Could not reach the server. Is the backend running?');
+      setLoading(false);
+      e.target.value = '';
+      return;
+    }
     const sn = uploadedName || file.name.replace(/\.pdf$/i, '').trim() || 'Untitled Score';
     setScoreName(sn);
     let supabaseToken: string | null = null;
@@ -1048,7 +1069,8 @@ export default function Home() {
   }
 
   function clearAll() {
-    if (hiddenOwners.size === 0) {
+    // Only the host can wipe everything; students clear just their own marks (server enforces this too).
+    if (hiddenOwners.size === 0 && isHost) {
       setAnnotations([]);
       setUndoStack([]);
       setRedoStack([]);
@@ -1375,6 +1397,9 @@ export default function Home() {
                   {loading ? 'Uploading…' : '+ Upload Score'}
                   <input type="file" accept=".pdf" onChange={handleUpload} className="hidden" disabled={loading} />
                 </label>
+                {uploadError && (
+                  <p role="alert" className="text-sm" style={{ color: '#ef4444', marginTop: -8 }}>{uploadError}</p>
+                )}
               </div>
 
               <div className="p-8 flex flex-col items-start gap-5 text-left"

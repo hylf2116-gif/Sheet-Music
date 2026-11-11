@@ -181,12 +181,16 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => { saveRoomsSync(); process.exit(0); });
 }
 
+const MAX_UPLOAD_MB = 50;
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/'),
-  filename: (req, file, cb) => cb(null, `${uuidv4()}${path.extname(file.originalname)}`),
+  // Absolute path: works no matter which folder the server is started from.
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  // Always .pdf, never the uploader's own extension.
+  filename: (req, file, cb) => cb(null, `${uuidv4()}.pdf`),
 });
 const upload = multer({
   storage,
+  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') cb(null, true);
     else cb(new Error('Only PDF files are allowed'));
@@ -253,7 +257,16 @@ app.post('/create-room', async (req, res) => {
   res.json({ roomId, hostToken });
 });
 
-app.post('/upload', upload.single('pdf'), (req, res) => {
+app.post('/upload', (req, res, next) => {
+  // Turn multer errors (too large, not a PDF) into clear JSON instead of an HTML error page.
+  upload.single('pdf')(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: `This PDF is larger than ${MAX_UPLOAD_MB} MB. Try a smaller file.` });
+    }
+    return res.status(400).json({ error: err.message || 'Upload failed.' });
+  });
+}, (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
   const scoreName = req.file.originalname.replace(/\.pdf$/i, '').trim() || 'Untitled Score';
@@ -582,10 +595,19 @@ io.on('connection', (socket) => {
 
   socket.on('new-shape', ({ roomId, shape }) => {
     const room = rooms[roomId];
-    if (!room) return;
-    room.shapes.push(shape);
+    // Only sockets that joined this room may draw in it.
+    if (!room || currentRoom !== roomId) return;
+    if (!shape || typeof shape !== 'object' || typeof shape.id !== 'string' || !shape.id) return;
+    if (typeof shape.page !== 'number' || !isValidChanges(shape)) return;
+    if (room.shapes.some((s) => s.id === shape.id)) return; // ignore duplicates
+    // Students always own what they create. The host may keep another owner, because the
+    // eraser and undo/redo re-create pieces of other people's strokes on their layers.
+    const saved = isHostSocket && typeof shape.ownerId === 'string' && shape.ownerId
+      ? shape
+      : { ...shape, ownerId: clientIdForSocket };
+    room.shapes.push(saved);
     saveRooms();
-    socket.to(roomId).emit('new-shape', shape);
+    socket.to(roomId).emit('new-shape', saved);
   });
 
   socket.on('delete-shape', ({ roomId, id }) => {
@@ -614,12 +636,21 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('undo', id);
   });
 
+  // Clear: the host clears everything; anyone else only clears their own annotations.
   socket.on('clear', (roomId) => {
-    if (rooms[roomId]) {
-      rooms[roomId].shapes = [];
+    const room = rooms[roomId];
+    if (!room || currentRoom !== roomId) return;
+    if (isHostSocket) {
+      room.shapes = [];
       saveRooms();
+      socket.to(roomId).emit('clear');
+      return;
     }
-    socket.to(roomId).emit('clear');
+    const mine = room.shapes.filter((s) => s.ownerId === clientIdForSocket);
+    if (!mine.length) return;
+    room.shapes = room.shapes.filter((s) => s.ownerId !== clientIdForSocket);
+    saveRooms();
+    for (const s of mine) socket.to(roomId).emit('delete-shape', s.id);
   });
 
   socket.on('update-shape', ({ roomId, id, changes }) => {
