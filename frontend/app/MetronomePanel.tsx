@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useT, useLang } from '../lib/i18n';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -187,15 +188,18 @@ function playSound(ctx: AudioContext, type: SoundType, freq: number, gain: numbe
 
 // Collapsible section header. Defined at module level so React keeps it stable between renders.
 function SectionHeader({ title, isOpen, onToggle }: { title: string; isOpen: boolean; onToggle: () => void }) {
+  const t = useT();
   return (
     <button onClick={onToggle} className="w-full flex items-center justify-between py-1">
-      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">{title}</span>
+      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">{t(title)}</span>
       <svg viewBox="0 0 24 24" className={`w-3.5 h-3.5 text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2}><path d="M6 9l6 6 6-6" /></svg>
     </button>
   );
 }
 
 export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose }: Props) {
+  const t = useT();
+  const { lang } = useLang();
   // BPM
   const [bpm, setBpm] = useState(120);
   const [bpmEditing, setBpmEditing] = useState(false);
@@ -752,21 +756,21 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
         onMouseDown={onHeaderMouseDown}
         style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', cursor: isDragging ? 'grabbing' : 'grab' }}>
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-semibold text-white tracking-wide">Metronome</span>
+          <span className="text-sm font-semibold text-white tracking-wide">{t('Metronome')}</span>
           {!isHost && (
             <span className="text-xs px-1.5 py-0.5 rounded shrink-0"
-              style={{ background: 'rgba(129,140,248,0.15)', color: '#a5b4fc' }}>⟳ Synced</span>
+              style={{ background: 'rgba(129,140,248,0.15)', color: '#a5b4fc' }}>⟳ {t('Synced')}</span>
           )}
           {timerRemaining && (
             <span className="text-xs font-mono tabular-nums shrink-0" style={{ color: '#f59e0b' }}>⏱ {timerRemaining}</span>
           )}
         </div>
         <div className="flex items-center gap-0.5">
-          <button onClick={() => setMinimized(true)} title="Minimize"
+          <button onClick={() => setMinimized(true)} title={t('Minimize')}
             className="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-white transition-colors">
             <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2}><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 0 2-2h3M3 16h3a2 2 0 0 0 2 2v3" /></svg>
           </button>
-          <button onClick={onClose} title="Close"
+          <button onClick={onClose} title={t('Close')}
             className="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-white transition-colors">
             <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
@@ -881,7 +885,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                     <div className="relative group cursor-text"
                       onDoubleClick={() => { if (!isHost) return; setBpmInput(String(bpm)); setBpmEditing(true); setTimeout(() => bpmInputRef.current?.select(), 10); }}>
                       <span className="text-4xl font-bold text-white tabular-nums">{bpm}</span>
-                      {isHost && <span className="absolute -top-1 right-0 text-[10px] text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity select-none">dbl-click</span>}
+                      {isHost && <span className="absolute -top-1 right-0 text-[10px] text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity select-none">{t('dbl-click')}</span>}
                     </div>
                   )}
                 </div>
@@ -907,13 +911,13 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                 {showTempoDD && (
                   <div className="absolute bottom-full mb-1 left-0 right-0 z-20 rounded-xl overflow-hidden"
                     style={{ background: 'var(--float-bg)', border: '1px solid var(--float-border)', maxHeight: 220, overflowY: 'auto' }}>
-                    {TEMPO_MARKINGS.map(t => (
-                      <button key={t.name}
-                        onClick={() => { if (!isHost) return; changeBpm(t.bpm); setShowTempoDD(false); }}
+                    {TEMPO_MARKINGS.map(tm => (
+                      <button key={tm.name}
+                        onClick={() => { if (!isHost) return; changeBpm(tm.bpm); setShowTempoDD(false); }}
                         className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-white/5 transition-colors"
-                        style={{ color: tempoMarking === t.name ? '#818cf8' : '#9ca3af' }}>
-                        <span>{t.name}</span>
-                        <span className="text-xs text-gray-600">{t.range}</span>
+                        style={{ color: tempoMarking === tm.name ? '#818cf8' : '#9ca3af' }}>
+                        <span>{tm.name}{lang === 'zh' && <span className="ml-1.5 text-xs text-gray-500">{t(tm.name + '|meaning')}</span>}</span>
+                        <span className="text-xs text-gray-600">{tm.range}</span>
                       </button>
                     ))}
                   </div>
@@ -932,16 +936,16 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
               color: isPlaying ? '#f87171' : '#a5b4fc',
               border: isPlaying ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(129,140,248,0.3)',
             }}>
-            {isPlaying ? '⏹ Stop' : '▶ Start'}
+            {isPlaying ? '⏹ ' + t('Stop') : '▶ ' + t('Start')}
           </button>
           {isHost && (
             <button onClick={tap} className="flex-1 h-10 rounded-xl text-sm font-semibold select-none"
               style={{ background: 'rgba(255,255,255,0.05)', color: '#d1d5db', border: '1px solid rgba(255,255,255,0.08)' }}>
-              Tap
+              {t('Tap')}
             </button>
           )}
         </div>
-        {isHost && <p className="text-xs text-gray-600 -mt-2 text-center">Space = start/stop · ↑↓ = ±1 BPM · Shift±5 · Ctrl±10</p>}
+        {isHost && <p className="text-xs text-gray-600 -mt-2 text-center">{t('Space = start/stop · ↑↓ = ±1 BPM · Shift±5 · Ctrl±10')}</p>}
 
         {/* ── TIME SIGNATURE ── */}
         <div className="flex flex-col gap-2">
@@ -970,7 +974,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
               {/* Custom numerator + denominator */}
               <div className="flex items-center gap-3">
                 <div className="flex flex-col items-center gap-1 flex-1">
-                  <span className="text-xs text-gray-600">Beats (1–16)</span>
+                  <span className="text-xs text-gray-600">{t('Beats (1–16)')}</span>
                   <div className="flex items-center gap-1">
                     <button disabled={!isHost || beatsPerBar <= 1}
                       onClick={() => { if (!isHost) return; const v = Math.max(1, beatsPerBar - 1); setBeatsPerBar(v); R.current.beatsPerBar = v; emitRef.current({ beatsPerBar: v }); }}
@@ -985,7 +989,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                 </div>
                 <span className="text-2xl text-gray-600 pb-1">/</span>
                 <div className="flex flex-col items-center gap-1 flex-1">
-                  <span className="text-xs text-gray-600">Note value</span>
+                  <span className="text-xs text-gray-600">{t('Note value')}</span>
                   <div className="flex gap-1">
                     {[2, 4, 8, 16, 32].map(d => (
                       <button key={d}
@@ -1000,10 +1004,10 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
               </div>
               {/* Subdivision */}
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 shrink-0">Subdivision</span>
+                <span className="text-xs text-gray-500 shrink-0">{t('Subdivision')}</span>
                 <div className="flex gap-1">
                   {SUBDIV_OPTIONS.map(s => (
-                    <button key={s.value} title={s.name}
+                    <button key={s.value} title={t(s.name)}
                       onClick={() => { if (!isHost) return; setSubdivision(s.value); R.current.subdivision = s.value; emitRef.current({ subdivision: s.value }); }}
                       className="w-8 h-7 rounded text-xs font-medium transition-colors"
                       style={{ background: subdivision === s.value ? '#818cf8' : 'rgba(255,255,255,0.05)', color: subdivision === s.value ? '#fff' : '#9ca3af' }}>
@@ -1027,20 +1031,20 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                     onClick={() => { if (!isHost) return; setSoundType(s.id); R.current.soundType = s.id; emitRef.current({ soundType: s.id }); }}
                     className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
                     style={{ background: soundType === s.id ? '#818cf8' : 'rgba(255,255,255,0.05)', color: soundType === s.id ? '#fff' : '#9ca3af' }}>
-                    {s.label}
+                    {t(s.label)}
                   </button>
                 ))}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
-                  <span className="text-xs text-gray-600">Accent pitch</span>
+                  <span className="text-xs text-gray-600">{t('Accent pitch')}</span>
                   <input type="range" min={400} max={3000} step={50} value={accentPitch}
                     onChange={e => { setAccentPitch(+e.target.value); R.current.accentPitch = +e.target.value; }}
                     className="w-full" style={{ accentColor: '#f59e0b' }} />
                   <span className="text-xs text-gray-600 tabular-nums">{accentPitch} Hz</span>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="text-xs text-gray-600">Normal pitch</span>
+                  <span className="text-xs text-gray-600">{t('Normal pitch')}</span>
                   <input type="range" min={200} max={2000} step={50} value={normalPitch}
                     onChange={e => { setNormalPitch(+e.target.value); R.current.normalPitch = +e.target.value; }}
                     className="w-full" style={{ accentColor: '#818cf8' }} />
@@ -1060,11 +1064,11 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
               </div>
               {/* Visual toggles */}
               <div className="flex items-center gap-3 pt-0.5">
-                <span className="text-xs text-gray-600">Visual:</span>
+                <span className="text-xs text-gray-600">{t('Visual:')}</span>
                 {([['pendulum', showPendulum, setShowPendulum], ['flash', showFlash, setShowFlash], ['dots', showDots, setShowDots]] as [string, boolean, (v: boolean) => void][]).map(([label, val, setter]) => (
                   <label key={label} className="flex items-center gap-1 cursor-pointer">
                     <input type="checkbox" checked={val} onChange={e => setter(e.target.checked)} className="w-3 h-3 accent-indigo-400" />
-                    <span className="text-xs text-gray-500 capitalize">{label}</span>
+                    <span className="text-xs text-gray-500 capitalize">{t(label)}</span>
                   </label>
                 ))}
               </div>
@@ -1085,7 +1089,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                   return (
                     <button key={i}
                       disabled={!isHost}
-                      title={level === 2 ? 'Strong' : level === 1 ? 'Medium' : 'Off'}
+                      title={level === 2 ? t('Strong') : level === 1 ? t('Medium') : t('Off')}
                       onMouseDown={() => {
                         if (!isHost) return;
                         const next = ((accents[i] + 1) % 3) as AccentLevel;
@@ -1109,7 +1113,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                   );
                 })}
               </div>
-              <span className="text-xs text-gray-600">Click or drag to cycle: strong → medium → off</span>
+              <span className="text-xs text-gray-600">{t('Click or drag to cycle: strong → medium → off')}</span>
             </div>
           )}
         </div>
@@ -1125,49 +1129,49 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                     <button key={m} onClick={() => setTrainerMode(m)}
                       className="py-1.5 rounded-lg text-xs font-medium transition-colors"
                       style={{ background: trainerMode === m ? '#818cf8' : 'rgba(255,255,255,0.05)', color: trainerMode === m ? '#fff' : '#9ca3af' }}>
-                      {m === 'off' ? 'Off' : m === 'gradual' ? '+BPM' : m === 'random' ? 'Mute' : 'Target'}
+                      {m === 'off' ? t('Off') : m === 'gradual' ? '+BPM' : m === 'random' ? t('Mute') : t('Target')}
                     </button>
                   ))}
                 </div>
 
                 {trainerMode === 'gradual' && (
                   <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap">
-                    <span>Increase BPM by</span>
+                    <span>{t('Increase BPM by')}</span>
                     <input type="number" min={0.5} max={20} step={0.5} value={trainerAmount}
                       onChange={e => setTrainerAmount(Math.max(0.5, +e.target.value))}
                       className="w-12 text-center rounded bg-white/5 border border-white/10 text-white py-1" />
-                    <span>every</span>
+                    <span>{t('every|gradual')}</span>
                     <input type="number" min={1} max={64} value={trainerEvery}
                       onChange={e => setTrainerEvery(Math.max(1, +e.target.value))}
                       className="w-12 text-center rounded bg-white/5 border border-white/10 text-white py-1" />
-                    <span>bars</span>
+                    <span>{t('bars|gradual')}</span>
                   </div>
                 )}
 
                 {trainerMode === 'random' && (
                   <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap">
-                    <span>Randomly mute 1 in every</span>
+                    <span>{t('Randomly mute 1 in every')}</span>
                     <input type="number" min={2} max={16} value={trainerEvery}
                       onChange={e => setTrainerEvery(Math.max(2, +e.target.value))}
                       className="w-12 text-center rounded bg-white/5 border border-white/10 text-white py-1" />
-                    <span>bars</span>
+                    <span>{t('bars|random')}</span>
                   </div>
                 )}
 
                 {trainerMode === 'target' && (
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap">
-                      <span>Reach</span>
+                      <span>{t('Reach')}</span>
                       <input type="number" min={20} max={300} value={trainerTargetBpm}
                         onChange={e => setTrainerTargetBpm(Math.max(20, Math.min(300, +e.target.value)))}
                         className="w-14 text-center rounded bg-white/5 border border-white/10 text-white py-1" />
-                      <span>BPM in</span>
+                      <span>{t('BPM in')}</span>
                       <input type="number" min={1} max={60} value={trainerMinutes}
                         onChange={e => setTrainerMinutes(Math.max(1, +e.target.value))}
                         className="w-12 text-center rounded bg-white/5 border border-white/10 text-white py-1" />
-                      <span>minutes</span>
+                      <span>{t('minutes|target')}</span>
                     </div>
-                    <span className="text-xs text-gray-600">{bpm} BPM → {trainerTargetBpm} BPM over {trainerMinutes} min</span>
+                    <span className="text-xs text-gray-600">{t('{from} BPM → {to} BPM over {min} min', { from: bpm, to: trainerTargetBpm, min: trainerMinutes })}</span>
                   </div>
                 )}
 
@@ -1194,7 +1198,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
           <SectionHeader title="Presets" isOpen={open.presets} onToggle={() => toggleOpen('presets')} />
           {open.presets && (
             <div className="flex flex-col gap-1.5">
-              {presets.length === 0 && <span className="text-xs text-gray-600">No presets saved.</span>}
+              {presets.length === 0 && <span className="text-xs text-gray-600">{t('No presets saved.')}</span>}
               {presets.map(p => (
                 <div key={p.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2 group transition-colors"
                   style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -1210,7 +1214,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
               ))}
               {isHost && (
                 <div className="flex gap-2">
-                  <input type="text" placeholder="Name this preset..."
+                  <input type="text" placeholder={t('Name this preset…')}
                     value={presetName} onChange={e => setPresetName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && savePreset()}
                     className="flex-1 text-sm rounded-lg px-3 py-1.5 text-white placeholder-gray-600 outline-none"
@@ -1218,7 +1222,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                   <button onClick={savePreset} disabled={!presetName.trim()}
                     className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-colors"
                     style={{ background: '#818cf8', color: '#fff' }}>
-                    Save
+                    {t('Save')}
                   </button>
                 </div>
               )}
@@ -1237,26 +1241,26 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                     onClick={() => { setTimerMode(m); setTimerRemaining(null); timerBarCount.current = 0; }}
                     className="py-1.5 rounded-lg text-xs font-medium transition-colors"
                     style={{ background: timerMode === m ? '#818cf8' : 'rgba(255,255,255,0.05)', color: timerMode === m ? '#fff' : '#9ca3af' }}>
-                    {m === 'off' ? 'Off' : m === 'time' ? 'Minutes' : 'Bars'}
+                    {m === 'off' ? t('Off') : m === 'time' ? t('Minutes') : t('Bars')}
                   </button>
                 ))}
               </div>
               {timerMode === 'time' && (
                 <div className="flex items-center gap-2 text-xs text-gray-400">
-                  <span>Stop after</span>
+                  <span>{t('Stop after|minutes')}</span>
                   <input type="number" min={1} max={120} value={timerMinutes}
                     onChange={e => setTimerMinutes(Math.max(1, +e.target.value))}
                     className="w-14 text-center rounded bg-white/5 border border-white/10 text-white py-1" />
-                  <span>minutes</span>
+                  <span>{t('minutes|timer')}</span>
                 </div>
               )}
               {timerMode === 'bars' && (
                 <div className="flex items-center gap-2 text-xs text-gray-400">
-                  <span>Stop after</span>
+                  <span>{t('Stop after|bars')}</span>
                   <input type="number" min={1} max={9999} value={timerBars}
                     onChange={e => setTimerBars(Math.max(1, +e.target.value))}
                     className="w-16 text-center rounded bg-white/5 border border-white/10 text-white py-1" />
-                  <span>bars</span>
+                  <span>{t('bars|timer')}</span>
                 </div>
               )}
               {timerRemaining && (

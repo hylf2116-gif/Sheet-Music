@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { useT } from '../lib/i18n';
 
 export interface LayerOwner {
   ownerId: string;
@@ -23,6 +24,7 @@ export default function LayersPopover({
   owners, hiddenOwners, rightOffset,
   onToggle, onShowAll, onOnlyMine, onClose,
 }: Props) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,7 +63,7 @@ export default function LayersPopover({
             <polyline points="2 17 12 22 22 17" />
             <polyline points="2 12 12 17 22 12" />
           </svg>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t)', letterSpacing: 0.1 }}>Layers</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t)', letterSpacing: 0.1 }}>{t('Layers')}</span>
         </div>
         <button
           onClick={onClose}
@@ -90,7 +92,7 @@ export default function LayersPopover({
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--t)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--t2)'; }}
           >
-            {label}
+            {t(label)}
           </button>
         ))}
       </div>
@@ -100,7 +102,7 @@ export default function LayersPopover({
       {/* Owner rows */}
       {owners.length === 0 ? (
         <p style={{ padding: '8px 12px 12px', fontSize: 12, color: 'var(--t3)', textAlign: 'center' }}>
-          No annotations yet
+          {t('No annotations yet')}
         </p>
       ) : (
         <div style={{ maxHeight: 260, overflowY: 'auto', paddingBottom: 6 }}>
@@ -124,14 +126,14 @@ export default function LayersPopover({
                 }}>
                   {o.label}
                   {o.isMe && (
-                    <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--t3)', fontWeight: 400 }}>you</span>
+                    <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--t3)', fontWeight: 400 }}>{t('you')}</span>
                   )}
                 </span>
 
                 {/* Eye toggle */}
                 <button
                   onClick={() => onToggle(o.ownerId)}
-                  title={hidden ? 'Show layer' : 'Hide layer'}
+                  title={hidden ? t('Show layer') : t('Hide layer')}
                   style={{
                     width: 24, height: 24, borderRadius: 6, border: 'none',
                     background: 'transparent', cursor: 'pointer', display: 'flex',

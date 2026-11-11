@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useT } from '../lib/i18n';
 
 type Tab = 'login' | 'signup';
 
@@ -33,7 +34,8 @@ export default function AuthModal({ onClose }: { onClose: () => void }) {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
-  function switchTab(t: Tab) { setTab(t); setError(''); setSuccess(''); }
+  const t = useT();
+  function switchTab(k: Tab) { setTab(k); setError(''); setSuccess(''); }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -81,7 +83,7 @@ export default function AuthModal({ onClose }: { onClose: () => void }) {
       <div className="unino-modal rounded-2xl w-full max-w-sm p-6 shadow-2xl" style={{ backgroundColor: 'var(--modal-bg)', border: '1px solid var(--border-md)' }}>
         <div className="flex justify-between items-center mb-5">
           <h2 className="text-base font-bold">
-            {tab === 'login' ? 'Sign in to Unino' : 'Create your account'}
+            {tab === 'login' ? t('Sign in to Unino') : t('Create your account')}
           </h2>
           <button onClick={onClose}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
@@ -92,12 +94,12 @@ export default function AuthModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex gap-1 bg-white/5 rounded-xl p-1 mb-5">
-          {(['login', 'signup'] as Tab[]).map(t => (
-            <button key={t} onClick={() => switchTab(t)}
+          {(['login', 'signup'] as Tab[]).map(k => (
+            <button key={k} onClick={() => switchTab(k)}
               className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                tab === t ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
+                tab === k ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
               }`}>
-              {t === 'login' ? 'Log in' : 'Sign up'}
+              {k === 'login' ? t('Log in') : t('Sign up')}
             </button>
           ))}
         </div>
@@ -105,21 +107,21 @@ export default function AuthModal({ onClose }: { onClose: () => void }) {
         {success ? (
           <div className="text-center py-6">
             <div className="text-2xl mb-3">📬</div>
-            <p className="text-emerald-400 text-sm leading-relaxed">{success}</p>
+            <p className="text-emerald-400 text-sm leading-relaxed">{t(success)}</p>
             <button onClick={() => switchTab('login')}
               className="mt-4 text-sm text-gray-400 hover:text-white transition-colors underline underline-offset-2">
-              Back to log in
+              {t('Back to log in')}
             </button>
           </div>
         ) : (
           <form onSubmit={tab === 'login' ? handleLogin : handleSignup} className="flex flex-col gap-3">
             {tab === 'signup' && (
-              <input type="text" placeholder="Your name" value={name}
+              <input type="text" placeholder={t('Your name')} value={name}
                 onChange={e => setName(e.target.value)} required autoFocus className={inputCls} />
             )}
-            <input type="email" placeholder="Email" value={email}
+            <input type="email" placeholder={t('Email')} value={email}
               onChange={e => setEmail(e.target.value)} required autoFocus={tab === 'login'} className={inputCls} />
-            <input type="password" placeholder="Password" value={password}
+            <input type="password" placeholder={t('Password')} value={password}
               onChange={e => setPassword(e.target.value)} required minLength={6} className={inputCls} />
 
             {error && (
@@ -127,7 +129,7 @@ export default function AuthModal({ onClose }: { onClose: () => void }) {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0">
                   <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
-                <p className="text-red-400 text-xs leading-snug">{error}</p>
+                <p className="text-red-400 text-xs leading-snug">{t(error)}</p>
               </div>
             )}
 
@@ -136,10 +138,10 @@ export default function AuthModal({ onClose }: { onClose: () => void }) {
               {loading ? (
                 <span className="inline-flex items-center gap-2">
                   <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  {tab === 'login' ? 'Signing in…' : 'Creating account…'}
+                  {tab === 'login' ? t('Signing in…') : t('Creating account…')}
                 </span>
               ) : (
-                tab === 'login' ? 'Sign in' : 'Create account'
+                tab === 'login' ? t('Sign in') : t('Create account')
               )}
             </button>
           </form>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useT } from '../lib/i18n';
 
 export interface ChatMessage {
   id: string;
@@ -23,6 +24,7 @@ function formatTime(iso: string) {
 }
 
 export default function ChatPanel({ messages, mySocketId, onSend, onClose }: Props) {
+  const t = useT();
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,7 +67,7 @@ export default function ChatPanel({ messages, mySocketId, onSend, onClose }: Pro
             strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-indigo-400">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
-          <span className="text-[13px] font-semibold text-gray-200">Chat</span>
+          <span className="text-[13px] font-semibold text-gray-200">{t('Chat')}</span>
           {messages.length > 0 && (
             <span className="text-[10px] text-gray-600 font-medium">{messages.length}</span>
           )}
@@ -87,7 +89,7 @@ export default function ChatPanel({ messages, mySocketId, onSend, onClose }: Pro
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
             <span className="text-3xl opacity-30">💬</span>
             <p className="text-[11px] text-gray-600 leading-relaxed">
-              No messages yet.<br />Say something!
+              {t('No messages yet.')}<br />{t('Say something!')}
             </p>
           </div>
         ) : (
@@ -103,7 +105,7 @@ export default function ChatPanel({ messages, mySocketId, onSend, onClose }: Pro
                     <span className="text-[10px] font-semibold text-gray-500">{msg.senderName}</span>
                     {msg.isHost && (
                       <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">
-                        👑 Host
+                        👑 {t('Host')}
                       </span>
                     )}
                   </div>
@@ -137,7 +139,7 @@ export default function ChatPanel({ messages, mySocketId, onSend, onClose }: Pro
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
           }}
-          placeholder="Message…"
+          placeholder={t('Message…')}
           maxLength={500}
           className="u-input flex-1 rounded-xl px-3 py-2 text-[13px] focus:outline-none transition-colors min-w-0"
         />

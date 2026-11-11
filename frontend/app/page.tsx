@@ -28,6 +28,7 @@ import SymbolPopover, { SYMBOL_SIZE_FACTOR, DEFAULT_SYMBOL_EM, makeSymbolAnnotat
 import type { SymbolId } from './symbols';
 import { usePhone, useNarrow } from './useMediaQuery';
 import OMRPanel, { type OmrState, type OmrPrefs, type OmrMeasure, DEFAULT_OMR_PREFS } from './OMRPanel';
+import { useT, useLang, type TFunc } from '../lib/i18n';
 
 const OMR_PREFS_KEY = 'unino_omr_prefs';
 
@@ -128,6 +129,7 @@ function FBtn({ icon, active, onClick, title, amber, badge, dot }: {
 }
 
 function FloatingCluster(p: FloatingClusterProps & { compact?: boolean }) {
+  const t = useT();
   // On phones the cluster folds into one "more" button in the bottom-right corner.
   const [open, setOpen] = useState(false);
   if (p.compact && !open) {
@@ -137,7 +139,7 @@ function FloatingCluster(p: FloatingClusterProps & { compact?: boolean }) {
         background: 'rgba(18,18,26,0.84)', backdropFilter: 'blur(18px) saturate(1.6)',
         borderRadius: 14, padding: 6, border: '1px solid rgba(255,255,255,0.09)', boxShadow: '0 8px 32px rgba(0,0,0,0.32)',
       }}>
-        <FBtn icon="more" active={false} onClick={() => setOpen(true)} title="More tools"
+        <FBtn icon="more" active={false} onClick={() => setOpen(true)} title={t('More tools')}
           badge={p.chatOpen ? 0 : p.chatUnread} />
       </div>
     );
@@ -152,36 +154,41 @@ function FloatingCluster(p: FloatingClusterProps & { compact?: boolean }) {
       borderRadius: 14, padding: 6, border: '1px solid rgba(255,255,255,0.09)',
       boxShadow: '0 8px 32px rgba(0,0,0,0.32)',
     }}>
-      <FBtn icon="pages"     active={p.thumbsOpen}          onClick={p.onToggleThumbs}      title="Page thumbnails" />
-      <FBtn icon="chat"      active={p.chatOpen}            onClick={p.onToggleChat}         title="Chat" badge={p.chatOpen ? 0 : p.chatUnread} />
-      <FBtn icon="metronome" active={p.metronomePanelOpen}  onClick={p.onToggleMetronome}    title="Metronome" />
-      <FBtn icon={p.bookmarkActive ? 'bookmarkFill' : 'bookmark'} active={p.bookmarkActive} onClick={p.onToggleBookmark} title={p.bookmarkActive ? 'Remove bookmark' : 'Bookmark this page'} amber />
+      <FBtn icon="pages"     active={p.thumbsOpen}          onClick={p.onToggleThumbs}      title={t('Page thumbnails')} />
+      <FBtn icon="chat"      active={p.chatOpen}            onClick={p.onToggleChat}         title={t('Chat')} badge={p.chatOpen ? 0 : p.chatUnread} />
+      <FBtn icon="metronome" active={p.metronomePanelOpen}  onClick={p.onToggleMetronome}    title={t('Metronome')} />
+      <FBtn icon={p.bookmarkActive ? 'bookmarkFill' : 'bookmark'} active={p.bookmarkActive} onClick={p.onToggleBookmark} title={p.bookmarkActive ? t('Remove bookmark') : t('Bookmark this page')} amber />
       <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 2px' }} />
-      <FBtn icon="tuner"     active={p.tunerOpen}           onClick={p.onToggleTuner}        title="Tuner" />
-      <FBtn icon="pitchlive" active={p.pitchLiveOpen}       onClick={p.onTogglePitchLive}    title="Live Pitch" />
-      <FBtn icon="layers"    active={p.layersOpen}          onClick={p.onToggleLayers}       title="Annotation layers" dot={p.hasHiddenLayers} />
-      <FBtn icon="measures"  active={p.omrOpen}             onClick={p.onToggleOmr}          title="Measures (bar numbers, highlight, jump)" dot={p.omrRunning} />
+      <FBtn icon="tuner"     active={p.tunerOpen}           onClick={p.onToggleTuner}        title={t('Tuner')} />
+      <FBtn icon="pitchlive" active={p.pitchLiveOpen}       onClick={p.onTogglePitchLive}    title={t('Live Pitch')} />
+      <FBtn icon="layers"    active={p.layersOpen}          onClick={p.onToggleLayers}       title={t('Annotation layers')} dot={p.hasHiddenLayers} />
+      <FBtn icon="measures"  active={p.omrOpen}             onClick={p.onToggleOmr}          title={t('Measures (bar numbers, highlight, jump)')} dot={p.omrRunning} />
       <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 2px' }} />
-      <FBtn icon="download"  active={false}                 onClick={p.onExportPDF}          title="Export PDF" />
-      {p.compact && <FBtn icon="more" active onClick={() => setOpen(false)} title="Close" />}
+      <FBtn icon="download"  active={false}                 onClick={p.onExportPDF}          title={t('Export PDF')} />
+      {p.compact && <FBtn icon="more" active onClick={() => setOpen(false)} title={t('Close')} />}
     </div>
   );
 }
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: TFunc): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t('Just now');
+  if (mins < 60) return t('{n}m ago', { n: mins });
   const hours = Math.floor(diff / 3_600_000);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t('{n}h ago', { n: hours });
   const days = Math.floor(diff / 86_400_000);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days} days ago`;
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (days === 1) return t('Yesterday');
+  if (days < 7) return t('{n} days ago', { n: days });
+  return new Date(iso).toLocaleDateString(t('en-US'), { month: 'short', day: 'numeric' });
 }
 
 export default function Home() {
+  const t = useT();
+  const { lang, setLang } = useLang();
+  // Socket handlers are set up once; they read the current language through this ref.
+  const tRef = useRef(t);
+  useEffect(() => { tRef.current = t; }, [t]);
   const [stage, setStage] = useState<'home' | 'room'>('home');
   const [roomId, setRoomId] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -649,9 +656,9 @@ export default function Home() {
       setRaisedHands(prev => prev.includes(socketId) ? prev : [...prev, socketId]);
       if (socketId !== socket.id && isHostRef.current) {
         const displayName = raiserNick || nicknameMapRef.current[socketId] || 'Someone';
-        addToast(`✋ ${displayName} raised a hand`, () => setShowHandsPanel(true));
+        addToast(tRef.current('✋ {name} raised a hand', { name: displayName }), () => setShowHandsPanel(true));
         playChime();
-        maybeNotify('Hand raised', `${displayName} wants to speak`);
+        maybeNotify(tRef.current('Hand raised'), tRef.current('{name} wants to speak', { name: displayName }));
       }
     });
     socket.on('lower-hand', ({ socketId }: { socketId: string }) => {
@@ -694,7 +701,7 @@ export default function Home() {
         try { localStorage.setItem(`unino_host_${roomIdRef.current}`, hostToken); } catch {}
       }
       setIsHost(true);
-      addToast('You are now the host of this room');
+      addToast(tRef.current('You are now the host of this room'));
     });
 
     socket.on('scroll-sync', (ratio: number | null) => {
@@ -768,7 +775,7 @@ export default function Home() {
     setLoading(true);
     try {
       const res = await fetch(backendUrl(`/room/${cleanId}`));
-      if (!res.ok) { alert('Room not found!'); setLoading(false); return; }
+      if (!res.ok) { alert(t('Room not found. Check the link or code.')); setLoading(false); return; }
       const data = await res.json();
       const sn = data.scoreName || 'Untitled Score';
       setScoreName(sn);
@@ -784,7 +791,7 @@ export default function Home() {
       setPendingRoomId(cleanId);
       setNicknameModalDefault(getNicknameDefault());
       setShowNicknameModal(true);
-    } catch { alert('Could not connect.'); }
+    } catch { alert(t('Could not connect to the server.')); }
     setLoading(false);
   }
 
@@ -1196,7 +1203,7 @@ export default function Home() {
       try {
         await exportAnnotatedPDF(pdfUrl, annotations, suggested);
       } catch (err: any) {
-        if (err?.name !== 'AbortError') addToast('Export failed');
+        if (err?.name !== 'AbortError') addToast(t('Export failed'));
       }
     } else {
       setShowExportModal(true);
@@ -1211,9 +1218,9 @@ export default function Home() {
       : annotations;
     try {
       await exportAnnotatedPDF(pdfUrl, annsToExport, filename);
-      addToast('Saved to Downloads folder');
+      addToast(t('Saved to Downloads folder'));
     } catch {
-      addToast('Export failed');
+      addToast(t('Export failed'));
     }
   }
 
@@ -1252,6 +1259,17 @@ export default function Home() {
               <span className="text-lg font-bold tracking-tight">Unino</span>
             </div>
 
+            <div className="flex items-center gap-2">
+            {/* Language switch: shows the language you can switch to, in that language */}
+            <button onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
+              title={t('Language')} aria-label={t('Language')}
+              className="flex items-center gap-1.5 h-9 px-3 rounded-full text-sm font-medium transition-colors"
+              style={{ color: 'var(--t2)', border: '1px solid var(--border)' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
+                <circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+              {lang === 'zh' ? 'EN' : '中文'}
+            </button>
             {!authLoading && (
               user ? (
                 <div className="relative" ref={userMenuRef}>
@@ -1281,7 +1299,7 @@ export default function Home() {
                         <button key={label}
                           onClick={() => { setShowUserMenu(false); setAccountPanel(tab); }}
                           className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
-                          {label}
+                          {t(label)}
                         </button>
                       ))}
                       <div className="mt-1 pt-1" style={{ borderTop: '1px solid var(--divider)' }}>
@@ -1289,7 +1307,7 @@ export default function Home() {
                           onClick={handleSignOut}
                           className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-white/5 transition-colors"
                         >
-                          Log out
+                          {t('Log out')}
                         </button>
                       </div>
                     </div>
@@ -1300,10 +1318,11 @@ export default function Home() {
                   onClick={() => setShowAuthModal(true)}
                   className="px-4 py-2 text-sm font-semibold unino-signin-btn"
                 >
-                  Sign in
+                  {t('Sign in')}
                 </button>
               )
             )}
+            </div>
           </header>
 
           {/* ── Main content ── */}
@@ -1314,15 +1333,15 @@ export default function Home() {
                 <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm mb-8"
                   style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--t2)' }}>
                   <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-                  Real-time sheet music collaboration
+                  {t('Real-time sheet music collaboration')}
                 </div>
                 <h1 className="text-6xl font-bold mb-6 leading-tight">
                   <span className="unino-hero-gradient bg-gradient-to-b from-white to-gray-500 bg-clip-text text-transparent">
-                    Annotate music.<br />Together.
+                    {t('Annotate music.')}<br />{t('Together.')}
                   </span>
                 </h1>
                 <p className="text-gray-400 text-xl mb-16 max-w-lg">
-                  Upload your score, share a link, and annotate in real time — with anyone.
+                  {t('Upload your score, share a link, and annotate in real time — with anyone.')}
                 </p>
               </>
             )}
@@ -1331,9 +1350,9 @@ export default function Home() {
             {user && (
               <div className="mb-10 text-left w-full max-w-2xl">
                 <h2 className="text-3xl font-bold mb-1.5">
-                  Welcome back{displayName ? `, ${displayName}` : ''}
+                  {displayName ? t('Welcome back, {name}', { name: displayName }) : t('Welcome back')}
                 </h2>
-                <p className="text-sm" style={{ color: 'var(--t2)' }}>Ready to collaborate?</p>
+                <p className="text-sm" style={{ color: 'var(--t2)' }}>{t('Ready to collaborate?')}</p>
               </div>
             )}
 
@@ -1341,13 +1360,13 @@ export default function Home() {
             {user && (
               <div className="w-full max-w-2xl mb-10 text-left">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">Recent</h3>
+                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">{t('Recent')}</h3>
                   {recentSessions.length > 5 && (
                     <button
                       onClick={() => setShowAllSessions(s => !s)}
                       className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
                     >
-                      {showAllSessions ? 'Show less' : `See all ${recentSessions.length} →`}
+                      {showAllSessions ? t('Show less') : t('See all {n} →', { n: recentSessions.length })}
                     </button>
                   )}
                 </div>
@@ -1361,8 +1380,8 @@ export default function Home() {
                       <circle cx="18" cy="16" r="3"/>
                     </svg>
                     <div>
-                      <p className="text-sm font-medium" style={{ color: 'var(--t2)' }}>No recent sessions yet</p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>Upload a score below to start your first session.</p>
+                      <p className="text-sm font-medium" style={{ color: 'var(--t2)' }}>{t('No recent sessions yet')}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>{t('Upload a score below to start your first session.')}</p>
                     </div>
                   </div>
                 ) : (
@@ -1385,7 +1404,7 @@ export default function Home() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate u-text">{s.score_name}</p>
-                          <p className="text-xs text-gray-600 mt-0.5">{relativeTime(s.last_accessed)}</p>
+                          <p className="text-xs text-gray-600 mt-0.5">{relativeTime(s.last_accessed, t)}</p>
                         </div>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}
                           strokeLinecap="round" strokeLinejoin="round"
@@ -1413,16 +1432,16 @@ export default function Home() {
                   </svg>
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold mb-2 u-text">Start a session</h2>
-                  <p className="text-sm leading-relaxed" style={{ color: 'var(--t2)' }}>Upload a PDF score and create a room. Share the link with anyone to collaborate.</p>
+                  <h2 className="text-xl font-bold mb-2 u-text">{t('Start a session')}</h2>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--t2)' }}>{t('Upload a PDF score and create a room. Share the link with anyone to collaborate.')}</p>
                 </div>
                 <label className={`w-full py-3 text-sm font-semibold text-center cursor-pointer transition-colors ${loading ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
                   style={{ borderRadius: 'var(--r-md)' }}>
-                  {loading ? 'Uploading…' : '+ Upload Score'}
+                  {loading ? t('Uploading…') : t('+ Upload Score')}
                   <input type="file" accept=".pdf" onChange={handleUpload} className="hidden" disabled={loading} />
                 </label>
                 {uploadError && (
-                  <p role="alert" className="text-sm" style={{ color: '#ef4444', marginTop: -8 }}>{uploadError}</p>
+                  <p role="alert" className="text-sm" style={{ color: '#ef4444', marginTop: -8 }}>{t(uploadError)}</p>
                 )}
               </div>
 
@@ -1437,13 +1456,13 @@ export default function Home() {
                   </svg>
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold mb-2 u-text">Join a session</h2>
-                  <p className="text-sm leading-relaxed" style={{ color: 'var(--t2)' }}>Paste the link or room code you received to join a live session.</p>
+                  <h2 className="text-xl font-bold mb-2 u-text">{t('Join a session')}</h2>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--t2)' }}>{t('Paste the link or room code you received to join a live session.')}</p>
                 </div>
                 <div className="w-full flex flex-col gap-2">
                   <input
                     type="text"
-                    placeholder="Paste link or room code…"
+                    placeholder={t('Paste link or room code…')}
                     value={joinCode}
                     onChange={e => setJoinCode(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && joinCode && joinRoom(joinCode)}
@@ -1455,7 +1474,7 @@ export default function Home() {
                     className="w-full py-2.5 text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-40"
                     style={{ borderRadius: 'var(--r-md)' }}
                   >
-                    {loading ? 'Joining…' : 'Join Session →'}
+                    {loading ? t('Joining…') : t('Join Session →')}
                   </button>
                 </div>
               </div>
@@ -1466,7 +1485,7 @@ export default function Home() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                   <div style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
                   <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
-                    or search / import from IMSLP
+                    {t('or search / import from IMSLP')}
                   </span>
                   <div style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
                 </div>
@@ -1481,9 +1500,9 @@ export default function Home() {
 
           {!user && (
             <footer className="relative z-10 text-center text-sm pb-8" style={{ color: 'var(--t3)' }}>
-              Built for musicians
+              {t('Built for musicians')}
               <div className="text-xs mt-1" style={{ color: 'var(--t3)', opacity: 0.6 }}>
-                Musical notation glyphs: <a href="/licenses/Bravura-LICENSE.txt" target="_blank" rel="noopener" style={{ color: 'inherit', textDecoration: 'underline' }}>Bravura</a> &amp; <a href="/licenses/STIXTwo-LICENSE.txt" target="_blank" rel="noopener" style={{ color: 'inherit', textDecoration: 'underline' }}>STIX Two</a> (SIL OFL 1.1)
+                {t('Musical notation glyphs:')} <a href="/licenses/Bravura-LICENSE.txt" target="_blank" rel="noopener" style={{ color: 'inherit', textDecoration: 'underline' }}>Bravura</a> &amp; <a href="/licenses/STIXTwo-LICENSE.txt" target="_blank" rel="noopener" style={{ color: 'inherit', textDecoration: 'underline' }}>STIX Two</a> (SIL OFL 1.1)
               </div>
             </footer>
           )}
@@ -1685,7 +1704,7 @@ export default function Home() {
           background: 'var(--surface)', border: '1px solid var(--border)',
           fontSize: 11, color: 'var(--t3)', pointerEvents: 'auto',
         }}>
-          Source:&nbsp;
+          {t('Source:')}&nbsp;
           <a href={imslpSource.pageUrl} target="_blank" rel="noopener noreferrer"
             style={{ color: '#fbbf24', textDecoration: 'none', fontWeight: 600 }}>
             IMSLP
@@ -1695,16 +1714,16 @@ export default function Home() {
 
       {/* Toast notifications */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50">
-        {toasts.map(t => (
-          <div key={t.id}
-            onClick={t.onClick}
+        {toasts.map(toast => (
+          <div key={toast.id}
+            onClick={toast.onClick}
             className="text-sm px-4 py-2.5 rounded-xl backdrop-blur-sm shadow-lg whitespace-nowrap"
             style={{
               background: 'var(--float-bg)', color: '#e2e8f0', border: '1px solid var(--float-border)',
-              cursor: t.onClick ? 'pointer' : 'default',
-              pointerEvents: t.onClick ? 'auto' : 'none',
+              cursor: toast.onClick ? 'pointer' : 'default',
+              pointerEvents: toast.onClick ? 'auto' : 'none',
             }}>
-            {t.msg}
+            {toast.msg}
           </div>
         ))}
       </div>
@@ -1786,18 +1805,18 @@ export default function Home() {
         }}>
           {followTeacher ? (
             <button onClick={() => { followRef.current = false; setFollowTeacher(false); }}
-              title="Stop following the teacher's page and scroll"
+              title={t("Stop following the teacher's page and scroll")}
               className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full shadow-sm"
               style={{ background: 'rgba(99,102,241,0.12)', color: '#4f46e5', border: '1px solid rgba(99,102,241,0.25)' }}>
               <span style={{ width: 7, height: 7, borderRadius: 4, background: '#6366f1' }} />
-              Following teacher
+              {t('Following teacher')}
             </button>
           ) : (
             <button onClick={resumeFollowing}
-              title="Go back to where the teacher is and follow again"
+              title={t('Go back to where the teacher is and follow again')}
               className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full shadow-md"
               style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d' }}>
-              Browsing on your own · Follow teacher
+              {t('Browsing on your own · Follow teacher')}
             </button>
           )}
         </div>

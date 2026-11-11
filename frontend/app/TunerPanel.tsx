@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { INSTRUMENTS, type InstrumentKey } from '../lib/pitch';
 import type { PitchReading } from '../hooks/usePitch';
+import { useT } from '../lib/i18n';
 
 interface Props {
   reading: PitchReading | null;
@@ -69,6 +70,7 @@ function CentsMeter({ cents, active }: { cents: number; active: boolean }) {
 }
 
 export default function TunerPanel({ reading, error, instrument, a4Ref, onInstrumentChange, onA4Change, onClose }: Props) {
+  const t = useT();
   const [pos, setPos] = useState({ x: 24, y: 80 });
   const dragRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
   const [a4Input, setA4Input] = useState(String(a4Ref));
@@ -129,7 +131,7 @@ export default function TunerPanel({ reading, error, instrument, a4Ref, onInstru
           <svg viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
             <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
           </svg>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>Tuner</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{t('Tuner')}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} data-nodrag>
           {/* Instrument selector */}
@@ -139,7 +141,7 @@ export default function TunerPanel({ reading, error, instrument, a4Ref, onInstru
             style={{ fontSize: 11, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, color: '#94a3b8', padding: '3px 6px', cursor: 'pointer' }}
           >
             {Object.entries(INSTRUMENTS).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
+              <option key={k} value={k}>{t(v.label)}</option>
             ))}
           </select>
           <button
@@ -157,7 +159,7 @@ export default function TunerPanel({ reading, error, instrument, a4Ref, onInstru
       <div style={{ padding: '20px 20px 12px', textAlign: 'center' }}>
         {error ? (
           <div style={{ padding: '12px 8px', background: 'rgba(248,113,113,0.1)', borderRadius: 10, border: '1px solid rgba(248,113,113,0.2)', marginBottom: 12 }}>
-            <p style={{ fontSize: 12, color: '#fca5a5', margin: 0 }}>{error}</p>
+            <p style={{ fontSize: 12, color: '#fca5a5', margin: 0 }}>{t(error)}</p>
           </div>
         ) : (
           <>
@@ -199,7 +201,7 @@ export default function TunerPanel({ reading, error, instrument, a4Ref, onInstru
       {/* A4 reference */}
       <div style={{ padding: '10px 20px', borderTop: '1px solid rgba(255,255,255,0.05)' }} data-nodrag>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>A4 reference</span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>{t('A4 reference')}</span>
           <input
             type="number" min={415} max={466} value={a4Input}
             onChange={e => setA4Input(e.target.value)}
@@ -229,7 +231,7 @@ export default function TunerPanel({ reading, error, instrument, a4Ref, onInstru
       {/* Open strings */}
       {preset.strings.length > 0 && (
         <div style={{ padding: '10px 20px 16px', borderTop: '1px solid rgba(255,255,255,0.05)' }} data-nodrag>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, display: 'block', marginBottom: 7 }}>Reference tones</span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500, display: 'block', marginBottom: 7 }}>{t('Reference tones')}</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {preset.strings.map(s => {
               const isPlaying = playingFreq === s.freq;

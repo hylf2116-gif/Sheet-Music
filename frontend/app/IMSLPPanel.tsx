@@ -5,6 +5,7 @@ import { backendUrl } from '../lib/config';
 import { useState, useRef } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { useT } from '../lib/i18n';
 
 interface SearchResult {
   title: string;
@@ -27,6 +28,7 @@ interface Props {
 }
 
 export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
+  const t = useT();
   // ── Search state ───────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -144,9 +146,9 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
             </svg>
           </div>
           <div>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--t)', margin: 0, lineHeight: 1.2 }}>Find on IMSLP</h2>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--t)', margin: 0, lineHeight: 1.2 }}>{t('Find on IMSLP')}</h2>
             <p style={{ fontSize: 11, color: 'var(--t3)', margin: 0, marginTop: 2 }}>
-              Free public domain sheet music
+              {t('Free public domain sheet music')}
             </p>
           </div>
         </div>
@@ -157,7 +159,7 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
             type="text"
             value={query}
             onChange={e => { setQuery(e.target.value); setSearchError(null); if (!e.target.value) setResults(null); }}
-            placeholder='e.g. "Popper Op. 76" or "Bach cello suite"'
+            placeholder={t('e.g. "Popper Op. 76" or "Bach cello suite"')}
             style={{
               flex: 1, padding: '9px 14px', fontSize: 13, borderRadius: 'var(--r-md)',
               background: 'var(--input-bg, rgba(255,255,255,0.05))',
@@ -178,13 +180,13 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
               transition: 'opacity 0.15s',
             }}
           >
-            {searching ? 'Searching…' : 'Search'}
+            {searching ? t('Searching…') : t('Search')}
           </button>
         </form>
 
         {searchError && (
           <p style={{ marginTop: 12, fontSize: 12, color: 'var(--t3)', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border)' }}>
-            {searchError}
+            {t(searchError)}
           </p>
         )}
 
@@ -214,7 +216,7 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
                     display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap',
                   }}
                 >
-                  Open on IMSLP
+                  {t('Open on IMSLP')}
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 10, height: 10 }}>
                     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                   </svg>
@@ -222,7 +224,7 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
               </div>
             ))}
             <p style={{ fontSize: 10, color: 'var(--t3)', textAlign: 'center', marginTop: 4 }}>
-              Results from <a href="https://imslp.org" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>IMSLP</a>. Copyright depends on your country — check the page before downloading.
+              {t('Results from')} <a href="https://imslp.org" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>IMSLP</a>{t('. Copyright depends on your country — check the page before downloading.')}
             </p>
           </div>
         )}
@@ -237,9 +239,9 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
             </svg>
           </div>
           <div>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--t)', margin: 0, lineHeight: 1.2 }}>Import from IMSLP link</h2>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--t)', margin: 0, lineHeight: 1.2 }}>{t('Import from IMSLP link')}</h2>
             <p style={{ fontSize: 11, color: 'var(--t3)', margin: 0, marginTop: 2 }}>
-              Paste a direct PDF link from an IMSLP score page
+              {t('Paste a direct PDF link from an IMSLP score page')}
             </p>
           </div>
         </div>
@@ -269,8 +271,8 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
                 style={{ marginTop: 2, flexShrink: 0, accentColor: 'var(--accent)' }}
               />
               <span style={{ fontSize: 12, color: 'var(--t2)', lineHeight: 1.5 }}>
-                This score is from IMSLP. Copyright depends on my country.{' '}
-                <strong>I confirm I may use this score in my country.</strong>
+                {t('This score is from IMSLP. Copyright depends on my country.')}{' '}
+                <strong>{t('I confirm I may use this score in my country.')}</strong>
               </span>
             </label>
           )}
@@ -280,7 +282,7 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
               padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.08)',
               border: '1px solid rgba(239,68,68,0.2)', fontSize: 12, color: 'var(--t2)',
             }}>
-              <p style={{ margin: 0, lineHeight: 1.5 }}>{importError.message}</p>
+              <p style={{ margin: 0, lineHeight: 1.5 }}>{t(importError.message)}</p>
               {importError.fallbackUrl && (
                 <a
                   href={importError.fallbackUrl}
@@ -288,7 +290,7 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
                   rel="noopener noreferrer"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 8, fontSize: 11, fontWeight: 600, color: '#818cf8', textDecoration: 'none' }}
                 >
-                  Open file page on IMSLP to download manually
+                  {t('Open file page on IMSLP to download manually')}
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 10, height: 10 }}>
                     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
                   </svg>
@@ -308,12 +310,12 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
               transition: 'opacity 0.15s',
             }}
           >
-            {importing ? 'Importing…' : 'Import & Open'}
+            {importing ? t('Importing…') : t('Import & Open')}
           </button>
 
           <p style={{ fontSize: 10, color: 'var(--t3)', margin: 0, lineHeight: 1.5 }}>
-            Only IMSLP-hosted files are accepted. The PDF is downloaded via our server.
-            IMSLP may serve a waiting page — if so, download the file manually and use &ldquo;Start a session&rdquo; above.
+            {t('Only IMSLP-hosted files are accepted. The PDF is downloaded via our server.')}{' '}
+            {t('IMSLP may serve a waiting page — if so, download the file manually and use “Start a session” above.')}
           </p>
         </div>
       </div>

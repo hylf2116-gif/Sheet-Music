@@ -36,7 +36,8 @@ Frontend (terminal 2):
 - Host identity is a stable token (`hostToken`, stored hashed as `hostTokenHash` in rooms.json), not the socket id.
   Logged-in Supabase users can also be recognized as the host.
 - Permissions are checked on the server: only the host or the shape's owner can update or delete a shape.
-- Everything in the app UI and in code comments must be in English.
+- Code comments and UI source text are in English. Users can switch to Chinese (Settings / account / home button):
+  wrap visible text in `t('...')` (`lib/i18n.tsx`) and add a natural Chinese version to `lib/zh.ts` (not word-for-word).
 
 ## Working rules (the user is a beginner)
 - Give short, copy-pasteable steps.

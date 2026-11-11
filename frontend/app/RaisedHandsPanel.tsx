@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { useT } from '../lib/i18n';
 
 interface Props {
   raisedHands: string[];
@@ -19,6 +20,7 @@ export default function RaisedHandsPanel({
   soundMuted, rightOffset,
   onMuteToggle, onDismiss, onDismissAll, onClose,
 }: Props) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,7 +53,7 @@ export default function RaisedHandsPanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 14 }}>✋</span>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t)' }}>
-            Raised hands
+            {t('Raised hands')}
             {raisedHands.length > 0 && (
               <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 500,
                 color: '#fbbf24', background: 'rgba(251,191,36,0.15)',
@@ -65,7 +67,7 @@ export default function RaisedHandsPanel({
           {/* Sound mute toggle */}
           <button
             onClick={onMuteToggle}
-            title={soundMuted ? 'Unmute chime' : 'Mute chime'}
+            title={soundMuted ? t('Unmute chime') : t('Mute chime')}
             style={{
               width: 24, height: 24, border: 'none', background: 'transparent',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -101,7 +103,7 @@ export default function RaisedHandsPanel({
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
           >
-            Dismiss all
+            {t('Dismiss all')}
           </button>
         </div>
       )}
@@ -110,12 +112,12 @@ export default function RaisedHandsPanel({
 
       {raisedHands.length === 0 ? (
         <p style={{ padding: '8px 12px 12px', fontSize: 12, color: 'var(--t3)', textAlign: 'center' }}>
-          No hands raised
+          {t('No hands raised')}
         </p>
       ) : (
         <div style={{ maxHeight: 240, overflowY: 'auto', paddingBottom: 6 }}>
           {raisedHands.map(socketId => {
-            const name = nicknameMap[socketId] || (socketId === mySocketId ? 'You' : 'Guest');
+            const name = nicknameMap[socketId] || (socketId === mySocketId ? t('You') : t('Guest'));
             const isMe = socketId === mySocketId;
             return (
               <div key={socketId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px' }}>
@@ -123,7 +125,7 @@ export default function RaisedHandsPanel({
                 <span style={{ flex: 1, fontSize: 13, color: 'var(--t)', overflow: 'hidden',
                   textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {name}
-                  {isMe && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--t3)' }}>you</span>}
+                  {isMe && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--t3)' }}>{t('you')}</span>}
                 </span>
                 <button
                   onClick={() => onDismiss(socketId)}
@@ -133,7 +135,7 @@ export default function RaisedHandsPanel({
                   onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
                 >
-                  Lower
+                  {t('Lower')}
                 </button>
               </div>
             );

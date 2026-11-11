@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useT } from '../lib/i18n';
 
 interface Props {
   pdfUrl: string;
@@ -15,6 +16,7 @@ const TARGET_THUMB_WIDTH = 124;
 export default function ThumbnailPanel({
   pdfUrl, currentPage, bookmarks, onPageClick, onClose,
 }: Props) {
+  const t = useT();
   const [thumbs, setThumbs] = useState<(HTMLCanvasElement | null)[]>([]);
   const [numPages, setNumPages] = useState(0);
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
@@ -101,7 +103,7 @@ export default function ThumbnailPanel({
             <rect x="3" y="14" width="7" height="7" rx="1" />
             <rect x="14" y="14" width="7" height="7" rx="1" />
           </svg>
-          <span className="text-[13px] font-semibold text-gray-200">Pages</span>
+          <span className="text-[13px] font-semibold text-gray-200">{t('Pages')}</span>
           {numPages > 0 && (
             <span className="text-[10px] text-gray-600">{numPages}</span>
           )}
@@ -135,7 +137,7 @@ export default function ThumbnailPanel({
               style={{ width: 10, height: 10 }}>
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
             </svg>
-            {showBookmarksOnly ? 'All pages' : `Bookmarks (${bookmarks.length})`}
+            {showBookmarksOnly ? t('All pages') : t('Bookmarks ({n})', { n: bookmarks.length })}
           </button>
         </div>
       )}
@@ -143,7 +145,7 @@ export default function ThumbnailPanel({
       {/* Thumbnail list */}
       <div className="flex-1 overflow-y-auto px-2 py-2 flex flex-col gap-2">
         {visiblePages.length === 0 && showBookmarksOnly && (
-          <p className="text-[11px] text-gray-600 text-center pt-6">No bookmarks yet</p>
+          <p className="text-[11px] text-gray-600 text-center pt-6">{t('No bookmarks yet')}</p>
         )}
 
         {visiblePages.map(i => {

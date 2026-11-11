@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useT } from '../lib/i18n';
 
 // One detected measure, in normalized page coordinates (0..1).
 export interface OmrMeasure { n: number; x: number; y: number; w: number; h: number }
@@ -42,13 +43,14 @@ interface Props {
 function Toggle({ label, hint, checked, onChange }: {
   label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void;
 }) {
+  const t = useT();
   return (
     <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', cursor: 'pointer' }}>
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
         style={{ marginTop: 2, accentColor: '#6366f1' }} />
       <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <span style={{ fontSize: 12.5, color: 'var(--t)' }}>{label}</span>
-        {hint && <span style={{ fontSize: 11, color: 'var(--t3)' }}>{hint}</span>}
+        <span style={{ fontSize: 12.5, color: 'var(--t)' }}>{t(label)}</span>
+        {hint && <span style={{ fontSize: 11, color: 'var(--t3)' }}>{t(hint)}</span>}
       </span>
     </label>
   );
@@ -62,6 +64,7 @@ export default function OMRPanel({
   state, isHost, prefs, musicXmlUrl, rightOffset,
   onPrefsChange, onDetect, onJump, onClearHighlight, onClose,
 }: Props) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const [jumpText, setJumpText] = useState('');
   const [jumpError, setJumpError] = useState('');
@@ -81,19 +84,19 @@ export default function OMRPanel({
   function submitJump(e: React.FormEvent) {
     e.preventDefault();
     const n = Number(jumpText);
-    if (!Number.isInteger(n) || n < 1) { setJumpError('Enter a bar number'); return; }
-    if (!onJump(n)) { setJumpError(`Bar ${n} not found (1–${state?.measureCount ?? 0})`); return; }
+    if (!Number.isInteger(n) || n < 1) { setJumpError(t('Enter a bar number')); return; }
+    if (!onJump(n)) { setJumpError(t('Bar {n} not found (1–{max})', { n, max: state?.measureCount ?? 0 })); return; }
     setJumpError('');
   }
 
   let statusText = '';
   if (status === 'running') {
     const p = state?.progress;
-    statusText = p?.total ? `Detecting measures… page ${p.page} of ${p.total}` : 'Detecting measures…';
-  } else if (status === 'done') statusText = `${state?.measureCount ?? 0} bars detected`;
-  else if (status === 'error') statusText = state?.error || 'Detection failed';
-  else if (status === 'unavailable') statusText = state?.reason || 'Measure detection is not available';
-  else statusText = isHost ? 'Bars have not been detected for this score yet.' : 'The host has not detected bars for this score yet.';
+    statusText = p?.total ? t('Detecting measures… page {page} of {total}', { page: p.page, total: p.total }) : t('Detecting measures…');
+  } else if (status === 'done') statusText = t('{n} bars detected', { n: state?.measureCount ?? 0 });
+  else if (status === 'error') statusText = t(state?.error || 'Detection failed');
+  else if (status === 'unavailable') statusText = t(state?.reason || 'Measure detection is not available');
+  else statusText = isHost ? t('Bars have not been detected for this score yet.') : t('The host has not detected bars for this score yet.');
 
   return (
     <div ref={ref} className="phone-sheet" style={{
@@ -103,8 +106,8 @@ export default function OMRPanel({
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t)' }}>Measures</span>
-        <button onClick={onClose} title="Close" style={{ ...btn, padding: '2px 6px', background: 'transparent', color: 'var(--t3)' }}>✕</button>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t)' }}>{t('Measures')}</span>
+        <button onClick={onClose} title={t('Close')} style={{ ...btn, padding: '2px 6px', background: 'transparent', color: 'var(--t3)' }}>✕</button>
       </div>
 
       <div style={{ fontSize: 12, color: status === 'error' ? '#ef4444' : 'var(--t2)', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -114,7 +117,7 @@ export default function OMRPanel({
         <span>{statusText}</span>
       </div>
       {status === 'running' && (
-        <div style={{ fontSize: 11, color: 'var(--t3)' }}>Takes about 1 minute per page. You can keep teaching meanwhile.</div>
+        <div style={{ fontSize: 11, color: 'var(--t3)' }}>{t('Takes about 1 minute per page. You can keep teaching meanwhile.')}</div>
       )}
 
       {isHost && (status === 'none' || status === 'error' || status === 'done') && (
@@ -122,7 +125,7 @@ export default function OMRPanel({
           ...btn, background: done ? 'transparent' : '#6366f1', color: done ? 'var(--t3)' : 'white',
           border: done ? '1px solid var(--border-md)' : 'none',
         }}>
-          {done ? 'Detect again' : 'Detect measures'}
+          {done ? t('Detect again') : t('Detect measures')}
         </button>
       )}
 
@@ -136,27 +139,27 @@ export default function OMRPanel({
             checked={prefs.clickToHighlight} onChange={set('clickToHighlight')} />
           {state?.highlightedMeasure != null && (
             <button onClick={onClearHighlight} style={{ ...btn, background: 'transparent', color: 'var(--t2)', border: '1px solid var(--border-md)' }}>
-              Clear highlight (bar {state.highlightedMeasure})
+              {t('Clear highlight (bar {n})', { n: state.highlightedMeasure })}
             </button>
           )}
 
           <div style={{ height: 1, background: 'var(--divider)', margin: '2px 0' }} />
           <form onSubmit={submitJump} style={{ display: 'flex', gap: 6 }}>
             <input value={jumpText} onChange={e => { setJumpText(e.target.value); setJumpError(''); }}
-              inputMode="numeric" placeholder="Go to bar…" aria-label="Bar number"
+              inputMode="numeric" placeholder={t('Go to bar…')} aria-label={t('Bar number')}
               style={{ flex: 1, minWidth: 0, fontSize: 12, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border-md)', background: 'transparent', color: 'var(--t)' }} />
-            <button type="submit" style={{ ...btn, background: '#6366f1', color: 'white' }}>Go</button>
+            <button type="submit" style={{ ...btn, background: '#6366f1', color: 'white' }}>{t('Go')}</button>
           </form>
           {jumpError && <div style={{ fontSize: 11, color: '#ef4444' }}>{jumpError}</div>}
-          {isHost && <div style={{ fontSize: 11, color: 'var(--t3)' }}>When you jump, everyone in the room jumps too.</div>}
+          {isHost && <div style={{ fontSize: 11, color: 'var(--t3)' }}>{t('When you jump, everyone in the room jumps too.')}</div>}
 
           {state?.hasMusicXml && (
             <>
               <div style={{ height: 1, background: 'var(--divider)', margin: '2px 0' }} />
               <a href={musicXmlUrl} download style={{ ...btn, textAlign: 'center', textDecoration: 'none', background: 'transparent', color: 'var(--t2)', border: '1px solid var(--border-md)' }}>
-                Export MusicXML
+                {t('Export MusicXML')}
               </a>
-              <div style={{ fontSize: 11, color: 'var(--t3)' }}>Automatic recognition — notes may contain mistakes.</div>
+              <div style={{ fontSize: 11, color: 'var(--t3)' }}>{t('Automatic recognition — notes may contain mistakes.')}</div>
             </>
           )}
         </>

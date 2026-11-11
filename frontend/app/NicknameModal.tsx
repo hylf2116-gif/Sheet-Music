@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useT } from '../lib/i18n';
 
 interface Props {
   defaultValue: string;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function NicknameModal({ defaultValue, dismissible = false, onConfirm, onClose }: Props) {
+  const t = useT();
   const [value, setValue] = useState(defaultValue);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -54,7 +56,7 @@ export default function NicknameModal({ defaultValue, dismissible = false, onCon
               </svg>
             </div>
             <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--t)' }}>
-              {dismissible ? 'Change your name' : 'Enter your name'}
+              {dismissible ? t('Change your name') : t('Enter your name')}
             </h2>
           </div>
           {dismissible && onClose && (
@@ -74,12 +76,12 @@ export default function NicknameModal({ defaultValue, dismissible = false, onCon
 
         {!dismissible && (
           <p style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 16, lineHeight: 1.5 }}>
-            This name is shown to everyone in the room. You can change it later.
+            {t('This name is shown to everyone in the room. You can change it later.')}
           </p>
         )}
 
         <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--t2)', marginBottom: 6 }}>
-          Nickname
+          {t('Nickname')}
         </label>
         <input
           ref={inputRef}
@@ -88,7 +90,7 @@ export default function NicknameModal({ defaultValue, dismissible = false, onCon
           onChange={e => setValue(e.target.value.slice(0, 20))}
           onKeyDown={handleKeyDown}
           maxLength={20}
-          placeholder="Your name…"
+          placeholder={t('Your name…')}
           className="w-full u-input rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition-colors"
           spellCheck={false}
         />
@@ -100,7 +102,7 @@ export default function NicknameModal({ defaultValue, dismissible = false, onCon
 
         {trimmed.length > 0 && !valid && (
           <p style={{ fontSize: 11, color: '#f87171', marginTop: 4 }}>
-            Name must be 1–20 characters.
+            {t('Name must be 1–20 characters.')}
           </p>
         )}
 
@@ -114,7 +116,7 @@ export default function NicknameModal({ defaultValue, dismissible = false, onCon
                 border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer',
               }}
             >
-              Cancel
+              {t('Cancel')}
             </button>
           )}
           <button
@@ -127,7 +129,7 @@ export default function NicknameModal({ defaultValue, dismissible = false, onCon
               transition: 'background 0.15s',
             }}
           >
-            {dismissible ? 'Save' : 'Join'}
+            {dismissible ? t('Save') : t('Join')}
           </button>
         </div>
       </div>

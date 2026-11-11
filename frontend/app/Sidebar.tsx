@@ -1,6 +1,7 @@
 'use client';
 
 import type { RecentSession } from '../lib/sessions';
+import { useT, type TFunc } from '../lib/i18n';
 
 interface Props {
   open: boolean;
@@ -10,20 +11,21 @@ interface Props {
   onShowAllSessions?: () => void;
 }
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: TFunc): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t('Just now');
+  if (mins < 60) return t('{n}m ago', { n: mins });
   const hours = Math.floor(diff / 3_600_000);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t('{n}h ago', { n: hours });
   const days = Math.floor(diff / 86_400_000);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (days === 1) return t('Yesterday');
+  if (days < 7) return t('{n}d ago', { n: days });
+  return new Date(iso).toLocaleDateString(t('en-US'), { month: 'short', day: 'numeric' });
 }
 
 export default function Sidebar({ open, onToggle, sessions = [], onOpenRoom, onShowAllSessions }: Props) {
+  const t = useT();
   return (
     <div
       className="unino-sidebar relative flex-shrink-0 flex flex-col z-10 transition-all duration-300 overflow-hidden"
@@ -32,7 +34,7 @@ export default function Sidebar({ open, onToggle, sessions = [], onOpenRoom, onS
       {/* Toggle button */}
       <button
         onClick={onToggle}
-        title={open ? 'Collapse sidebar' : 'Expand sidebar'}
+        title={open ? t('Collapse sidebar') : t('Expand sidebar')}
         className="flex-shrink-0 h-12 flex items-center justify-center text-gray-600 hover:text-gray-300 hover:bg-white/5 transition-colors w-full"
       >
         <svg
@@ -52,14 +54,14 @@ export default function Sidebar({ open, onToggle, sessions = [], onOpenRoom, onS
             <span className="text-sm flex-shrink-0">🕐</span>
             {open && (
               <span className="text-[10px] font-semibold uppercase tracking-widest whitespace-nowrap text-gray-600">
-                Recent Sessions
+                {t('Recent Sessions')}
               </span>
             )}
           </div>
 
           {open && (
             sessions.length === 0 ? (
-              <p className="text-[11px] text-gray-700 px-5 pb-2">No recent sessions yet.</p>
+              <p className="text-[11px] text-gray-700 px-5 pb-2">{t('No recent sessions yet.')}</p>
             ) : (
               <div className="flex flex-col gap-0.5 px-2 pb-1">
                 {sessions.slice(0, 5).map(s => (
@@ -71,7 +73,7 @@ export default function Sidebar({ open, onToggle, sessions = [], onOpenRoom, onS
                         {s.score_name}
                       </p>
                       <p className="text-[10px] text-gray-700 leading-tight mt-0.5">
-                        {relativeTime(s.last_accessed)}
+                        {relativeTime(s.last_accessed, t)}
                       </p>
                     </div>
                   </button>
@@ -79,7 +81,7 @@ export default function Sidebar({ open, onToggle, sessions = [], onOpenRoom, onS
                 {onShowAllSessions && (
                   <button onClick={onShowAllSessions}
                     className="w-full text-left px-2.5 py-1.5 text-[10px] font-medium text-indigo-500 hover:text-indigo-400 transition-colors">
-                    See all sessions →
+                    {t('See all sessions →')}
                   </button>
                 )}
               </div>
@@ -93,11 +95,11 @@ export default function Sidebar({ open, onToggle, sessions = [], onOpenRoom, onS
             <span className="text-sm flex-shrink-0">🎼</span>
             {open && (
               <span className="text-[10px] font-semibold uppercase tracking-widest whitespace-nowrap text-gray-600">
-                My Scores
+                {t('My Scores')}
               </span>
             )}
           </div>
-          {open && <p className="text-[11px] text-gray-700 px-5 pb-2">Nothing here yet.</p>}
+          {open && <p className="text-[11px] text-gray-700 px-5 pb-2">{t('Nothing here yet.')}</p>}
         </div>
 
         {/* ── Favorites (stub) ────────────────────────────────────── */}
@@ -106,11 +108,11 @@ export default function Sidebar({ open, onToggle, sessions = [], onOpenRoom, onS
             <span className="text-sm flex-shrink-0">⭐</span>
             {open && (
               <span className="text-[10px] font-semibold uppercase tracking-widest whitespace-nowrap text-gray-600">
-                Favorites
+                {t('Favorites')}
               </span>
             )}
           </div>
-          {open && <p className="text-[11px] text-gray-700 px-5 pb-2">Nothing here yet.</p>}
+          {open && <p className="text-[11px] text-gray-700 px-5 pb-2">{t('Nothing here yet.')}</p>}
         </div>
 
       </div>

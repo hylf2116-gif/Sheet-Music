@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { SYMBOL_DEFS, SYMBOL_GROUPS, SYMBOL_LABELS, type SymbolId } from './symbols';
+import { useT } from '../lib/i18n';
 
 export type SymbolSize = 'S' | 'M' | 'L';
 // Lesson markings are drawn larger than engraved print, so even S is above print size.
@@ -66,8 +67,9 @@ export function SymbolIcon({ id, size = 22, color = 'currentColor' }: { id: Symb
 }
 
 function SymbolButton({ id, active, onPick }: { id: SymbolId; active?: boolean; onPick: (id: SymbolId) => void }) {
+  const t = useT();
   return (
-    <button type="button" title={SYMBOL_LABELS[id]} aria-label={SYMBOL_LABELS[id]} onClick={() => onPick(id)}
+    <button type="button" title={t(SYMBOL_LABELS[id])} aria-label={t(SYMBOL_LABELS[id])} onClick={() => onPick(id)}
       className={`rounded-lg flex items-center justify-center transition-colors ${active ? 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-300' : 'text-gray-700 hover:bg-black/[0.05]'}`}
       style={{ width: 44, height: 34 }}>
       <SymbolIcon id={id} size={18} />
@@ -77,11 +79,12 @@ function SymbolButton({ id, active, onPick }: { id: SymbolId; active?: boolean; 
 
 // Full palette: recent symbols first, then every group.
 export function SymbolGrid({ recent, active, onPick }: { recent: SymbolId[]; active?: SymbolId | null; onPick: (id: SymbolId) => void }) {
+  const t = useT();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {recent.length > 0 && (
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Recent</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">{t('Recent')}</div>
           <div className="flex flex-wrap gap-0.5">
             {recent.map(id => <SymbolButton key={id} id={id} active={id === active} onPick={onPick} />)}
           </div>
@@ -89,7 +92,7 @@ export function SymbolGrid({ recent, active, onPick }: { recent: SymbolId[]; act
       )}
       {SYMBOL_GROUPS.map(g => (
         <div key={g.id}>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">{g.label}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">{t(g.label)}</div>
           <div className="flex flex-wrap gap-0.5">
             {g.symbols.map(id => <SymbolButton key={id} id={id} active={id === active} onPick={onPick} />)}
           </div>
@@ -121,7 +124,7 @@ export default function SymbolPopover({ left, top, recent, active, onPick, onClo
   // Portal to <body> so blurred/transformed ancestors (toolbar) cannot offset `position: fixed`.
   if (typeof document === 'undefined') return null;
   return createPortal(
-    <div ref={ref} role="dialog" aria-label="Symbols" style={{
+    <div ref={ref} role="dialog" aria-label="Symbol palette" style={{
       position: 'fixed', left: l, top: t, zIndex: 60, width: W, maxHeight: H, overflowY: 'auto',
       background: 'white', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14,
       boxShadow: '0 12px 40px rgba(0,0,0,0.22)', padding: 10,

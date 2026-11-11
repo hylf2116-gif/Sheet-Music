@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { deleteSession, type RecentSession } from '../lib/sessions';
+import { useT, type TFunc } from '../lib/i18n';
+import LanguagePicker from './LanguagePicker';
 
 export type PanelTab = 'profile' | 'sessions' | 'settings';
 export type Theme = 'auto' | 'dark' | 'light';
@@ -21,19 +23,20 @@ interface Props {
   onSignOut: () => void;
 }
 
-function relativeTime(iso: string) {
+function relativeTime(iso: string, t: TFunc) {
   const d = new Date(iso);
   const diff = Date.now() - d.getTime();
   const days = Math.floor(diff / 86_400_000);
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days} days ago`;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  if (days === 0) return t('Today');
+  if (days === 1) return t('Yesterday');
+  if (days < 7) return t('{n} days ago', { n: days });
+  return d.toLocaleDateString(t('en-US'), { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 // ── Profile Tab ───────────────────────────────────────────────────────────────
 
 function ProfileTab({ user, onUserUpdated }: { user: User; onUserUpdated: (u: User) => void }) {
+  const t = useT();
   const [name, setName] = useState((user.user_metadata?.full_name as string) ?? '');
   const [nameSaving, setNameSaving] = useState(false);
   const [nameMsg, setNameMsg] = useState('');
@@ -85,37 +88,37 @@ function ProfileTab({ user, onUserUpdated }: { user: User; onUserUpdated: (u: Us
 
       {/* Display name */}
       <form onSubmit={saveName} className="flex flex-col gap-2">
-        <label className="text-xs font-medium text-gray-400">Display name</label>
-        <input className={inputCls} value={name} onChange={e => setName(e.target.value)} placeholder="Your name" />
+        <label className="text-xs font-medium text-gray-400">{t('Display name')}</label>
+        <input className={inputCls} value={name} onChange={e => setName(e.target.value)} placeholder={t('Your name')} />
         <div className="flex items-center justify-between">
-          {nameMsg && <p className={`text-xs ${nameMsg === 'Saved!' ? 'text-emerald-400' : 'text-red-400'}`}>{nameMsg}</p>}
+          {nameMsg && <p className={`text-xs ${nameMsg === 'Saved!' ? 'text-emerald-400' : 'text-red-400'}`}>{t(nameMsg)}</p>}
           <button type="submit" disabled={nameSaving}
             className="ml-auto px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">
-            {nameSaving ? 'Saving…' : 'Save'}
+            {nameSaving ? t('Saving…') : t('Save')}
           </button>
         </div>
       </form>
 
       {/* Email (read-only) */}
       <div className="flex flex-col gap-2">
-        <label className="text-xs font-medium text-gray-400">Email address</label>
+        <label className="text-xs font-medium text-gray-400">{t('Email address')}</label>
         <div className="px-3.5 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-sm text-gray-500 select-all">
           {user.email}
         </div>
-        <p className="text-[11px] text-gray-700">To change your email, contact support.</p>
+        <p className="text-[11px] text-gray-700">{t('To change your email, contact support.')}</p>
       </div>
 
       <div className="h-px u-divider" />
 
       {/* Change password */}
       <form onSubmit={savePassword} className="flex flex-col gap-2">
-        <label className="text-xs font-medium text-gray-400">Change password</label>
-        <input className={inputCls} type="password" placeholder="New password" value={newPw} onChange={e => setNewPw(e.target.value)} autoComplete="new-password" />
-        <input className={inputCls} type="password" placeholder="Confirm new password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} autoComplete="new-password" />
-        {pwMsg && <p className={`text-xs ${pwMsg === 'Password updated!' ? 'text-emerald-400' : 'text-red-400'}`}>{pwMsg}</p>}
+        <label className="text-xs font-medium text-gray-400">{t('Change password')}</label>
+        <input className={inputCls} type="password" placeholder={t('New password')} value={newPw} onChange={e => setNewPw(e.target.value)} autoComplete="new-password" />
+        <input className={inputCls} type="password" placeholder={t('Confirm new password')} value={confirmPw} onChange={e => setConfirmPw(e.target.value)} autoComplete="new-password" />
+        {pwMsg && <p className={`text-xs ${pwMsg === 'Password updated!' ? 'text-emerald-400' : 'text-red-400'}`}>{t(pwMsg)}</p>}
         <button type="submit" disabled={pwSaving || !newPw}
           className="self-end px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 transition-colors disabled:opacity-40">
-          {pwSaving ? 'Updating…' : 'Update password'}
+          {pwSaving ? t('Updating…') : t('Update password')}
         </button>
       </form>
     </div>
@@ -127,6 +130,7 @@ function ProfileTab({ user, onUserUpdated }: { user: User; onUserUpdated: (u: Us
 function SessionsTab({
   sessions, onOpenRoom, onSessionsChange,
 }: { sessions: RecentSession[]; onOpenRoom: (id: string) => void; onSessionsChange: (s: RecentSession[]) => void }) {
+  const t = useT();
   const [deleting, setDeleting] = useState<string | null>(null);
 
   async function handleDelete(id: string) {
@@ -145,8 +149,8 @@ function SessionsTab({
           <circle cx="6" cy="18" r="3"/>
           <circle cx="18" cy="16" r="3"/>
         </svg>
-        <p className="text-sm font-medium" style={{ color: 'var(--t2)' }}>No sessions yet</p>
-        <p className="text-xs" style={{ color: 'var(--t3)' }}>Sessions you create or join will appear here.</p>
+        <p className="text-sm font-medium" style={{ color: 'var(--t2)' }}>{t('No sessions yet')}</p>
+        <p className="text-xs" style={{ color: 'var(--t3)' }}>{t('Sessions you create or join will appear here.')}</p>
       </div>
     );
   }
@@ -167,15 +171,15 @@ function SessionsTab({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-white truncate">{s.score_name}</p>
-            <p className="text-xs text-gray-600">{relativeTime(s.last_accessed)}</p>
+            <p className="text-xs text-gray-600">{relativeTime(s.last_accessed, t)}</p>
           </div>
-          <button onClick={() => onOpenRoom(s.room_id)} title="Reopen"
+          <button onClick={() => onOpenRoom(s.room_id)} title={t('Reopen')}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-600 hover:text-white hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
               <path d="M9 18l6-6-6-6" />
             </svg>
           </button>
-          <button onClick={() => handleDelete(s.id)} disabled={deleting === s.id} title="Delete"
+          <button onClick={() => handleDelete(s.id)} disabled={deleting === s.id} title={t('Delete')}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-30">
             {deleting === s.id ? (
               <span className="w-3.5 h-3.5 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
@@ -196,6 +200,7 @@ function SessionsTab({
 function SettingsTab({ theme, onThemeChange, onSignOut }: {
   theme: Theme; onThemeChange: (t: Theme) => void; onSignOut: () => void;
 }) {
+  const t = useT();
   const [notifEmail, setNotifEmail] = useState(false);
   const [deleteStep, setDeleteStep] = useState<'idle' | 'confirm'>('idle');
   const [deleteInput, setDeleteInput] = useState('');
@@ -231,9 +236,15 @@ function SettingsTab({ theme, onThemeChange, onSignOut }: {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Language */}
+      <div>
+        <p className="text-xs font-medium text-gray-400 mb-2.5">{t('Language')}</p>
+        <LanguagePicker />
+      </div>
+
       {/* Theme */}
       <div>
-        <p className="text-xs font-medium text-gray-400 mb-2.5">Theme</p>
+        <p className="text-xs font-medium text-gray-400 mb-2.5">{t('Theme')}</p>
         <div className="grid grid-cols-3 gap-2">
           {themeOptions.map(opt => (
             <button key={opt.value} onClick={() => onThemeChange(opt.value)}
@@ -243,7 +254,7 @@ function SettingsTab({ theme, onThemeChange, onSignOut }: {
                   : 'bg-white/[0.03] border-white/[0.06] text-gray-400 hover:bg-white/[0.07]'
               }`}>
               {opt.icon}
-              <span className="text-xs font-medium">{opt.label}</span>
+              <span className="text-xs font-medium">{t(opt.label)}</span>
             </button>
           ))}
         </div>
@@ -253,11 +264,11 @@ function SettingsTab({ theme, onThemeChange, onSignOut }: {
 
       {/* Notifications */}
       <div>
-        <p className="text-xs font-medium text-gray-400 mb-2.5">Notifications</p>
+        <p className="text-xs font-medium text-gray-400 mb-2.5">{t('Notifications')}</p>
         <label className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.06] cursor-pointer">
           <div>
-            <p className="text-sm text-gray-300 font-medium">Email reminders</p>
-            <p className="text-xs text-gray-600 mt-0.5">Get notified when someone joins your session</p>
+            <p className="text-sm text-gray-300 font-medium">{t('Email reminders')}</p>
+            <p className="text-xs text-gray-600 mt-0.5">{t('Get notified when someone joins your session')}</p>
           </div>
           <div onClick={() => setNotifEmail(v => !v)}
             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${notifEmail ? 'bg-indigo-600' : 'bg-white/10'}`}>
@@ -270,20 +281,24 @@ function SettingsTab({ theme, onThemeChange, onSignOut }: {
 
       {/* Danger zone */}
       <div>
-        <p className="text-xs font-semibold text-red-500/70 uppercase tracking-widest mb-2.5">Danger zone</p>
+        <p className="text-xs font-semibold text-red-500/70 uppercase tracking-widest mb-2.5">{t('Danger zone')}</p>
 
         {deleteStep === 'idle' ? (
           <button onClick={() => setDeleteStep('confirm')}
             className="w-full py-2.5 rounded-xl border border-red-500/30 text-sm text-red-400 hover:bg-red-500/10 transition-colors font-medium">
-            Delete account
+            {t('Delete account')}
           </button>
         ) : (
           <div className="flex flex-col gap-3 p-4 rounded-xl border border-red-500/30 bg-red-500/5">
-            <p className="text-sm text-red-300 font-medium">This is permanent</p>
+            <p className="text-sm text-red-300 font-medium">{t('This is permanent')}</p>
             <p className="text-xs text-gray-400 leading-relaxed">
-              Your account and all session history will be deleted and cannot be recovered.
+              {t('Your account and all session history will be deleted and cannot be recovered.')}
             </p>
-            <p className="text-xs text-gray-500">Type <span className="font-mono text-red-400">DELETE</span> to confirm</p>
+            <p className="text-xs text-gray-500">
+              {(() => { const [before, after] = t('Type DELETE to confirm').split('DELETE'); return (
+                <>{before}<span className="font-mono text-red-400">DELETE</span>{after}</>
+              ); })()}
+            </p>
             <input
               value={deleteInput}
               onChange={e => setDeleteInput(e.target.value)}
@@ -294,13 +309,13 @@ function SettingsTab({ theme, onThemeChange, onSignOut }: {
             <div className="flex gap-2">
               <button onClick={() => { setDeleteStep('idle'); setDeleteInput(''); }}
                 className="flex-1 py-2 rounded-xl text-xs font-medium text-gray-400 bg-white/5 hover:bg-white/10 border border-white/8 transition-colors">
-                Cancel
+                {t('Cancel')}
               </button>
               <button
                 onClick={handleDeleteAccount}
                 disabled={deleteInput !== 'DELETE' || deleting}
                 className="flex-1 py-2 rounded-xl text-xs font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors disabled:opacity-40">
-                {deleting ? 'Deleting…' : 'Delete account'}
+                {deleting ? t('Deleting…') : t('Delete account')}
               </button>
             </div>
           </div>
@@ -316,6 +331,7 @@ export default function AccountPanel({
   user, sessions, initialTab, theme,
   onClose, onOpenRoom, onSessionsChange, onThemeChange, onUserUpdated, onSignOut,
 }: Props) {
+  const t = useT();
   const [tab, setTab] = useState<PanelTab>(initialTab);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -344,7 +360,7 @@ export default function AccountPanel({
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06] shrink-0">
-          <h2 className="text-sm font-semibold text-white">Account</h2>
+          <h2 className="text-sm font-semibold text-white">{t('Account')}</h2>
           <button onClick={onClose}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-white/5 transition-colors">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -355,14 +371,14 @@ export default function AccountPanel({
 
         {/* Tabs */}
         <div className="flex gap-0 px-5 pt-3 shrink-0 border-b border-white/[0.06]">
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
+          {tabs.map(tb => (
+            <button key={tb.id} onClick={() => setTab(tb.id)}
               className={`px-3 pb-2.5 text-sm font-medium border-b-2 transition-colors ${
-                tab === t.id
+                tab === tb.id
                   ? 'border-indigo-500 text-white'
                   : 'border-transparent text-gray-500 hover:text-gray-300'
               }`}>
-              {t.label}
+              {t(tb.label)}
             </button>
           ))}
         </div>
@@ -384,7 +400,7 @@ export default function AccountPanel({
         <div className="shrink-0 px-5 py-4 border-t border-white/[0.06]">
           <button onClick={onSignOut}
             className="w-full py-2.5 rounded-xl text-sm font-medium text-red-400 hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/30 transition-colors">
-            Log out
+            {t('Log out')}
           </button>
         </div>
       </div>

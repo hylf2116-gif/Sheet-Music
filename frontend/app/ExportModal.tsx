@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useT } from '../lib/i18n';
 
 interface Props {
   defaultName: string;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function ExportModal({ defaultName, hasHiddenLayers = false, onConfirm, onClose }: Props) {
+  const t = useT();
   const [filename, setFilename] = useState(defaultName);
   const [onlyVisible, setOnlyVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -46,7 +48,7 @@ export default function ExportModal({ defaultName, hasHiddenLayers = false, onCo
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
             </div>
-            <h2 className="text-sm font-semibold text-white">Export annotated PDF</h2>
+            <h2 className="text-sm font-semibold text-white">{t('Export annotated PDF')}</h2>
           </div>
           <button
             onClick={onClose}
@@ -60,7 +62,7 @@ export default function ExportModal({ defaultName, hasHiddenLayers = false, onCo
         </div>
 
         {/* Filename input */}
-        <label className="block mb-1.5 text-xs font-medium text-gray-400">Filename</label>
+        <label className="block mb-1.5 text-xs font-medium text-gray-400">{t('Filename')}</label>
         <input
           ref={inputRef}
           type="text"
@@ -91,7 +93,7 @@ export default function ExportModal({ defaultName, hasHiddenLayers = false, onCo
             </div>
             <input type="checkbox" className="sr-only" checked={onlyVisible} onChange={e => setOnlyVisible(e.target.checked)} />
             <span className="text-xs text-gray-400 group-hover:text-gray-300 transition-colors">
-              Only include visible layers
+              {t('Only include visible layers')}
             </span>
           </label>
         )}
@@ -104,7 +106,7 @@ export default function ExportModal({ defaultName, hasHiddenLayers = false, onCo
             <polyline points="7 10 12 15 17 10" />
             <line x1="12" y1="15" x2="12" y2="3" />
           </svg>
-          <p className="text-[11px] text-gray-600">Saved to your Downloads folder · .pdf added automatically</p>
+          <p className="text-[11px] text-gray-600">{t('Saved to your Downloads folder · .pdf added automatically')}</p>
         </div>
 
         {/* Actions */}
@@ -113,13 +115,13 @@ export default function ExportModal({ defaultName, hasHiddenLayers = false, onCo
             onClick={onClose}
             className="flex-1 h-9 rounded-xl text-sm font-medium text-gray-400 bg-white/5 hover:bg-white/10 hover:text-white border border-white/[0.08] transition-colors"
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             onClick={confirm}
             className="flex-1 h-9 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors"
           >
-            Export
+            {t('Export')}
           </button>
         </div>
       </div>

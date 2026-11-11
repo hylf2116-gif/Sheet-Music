@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SymbolId } from './symbols';
 import { SymbolShape, makeSymbolAnnotation, isSymbolId } from './SymbolPalette';
+import { useT } from '../lib/i18n';
 
 interface Props {
   pdfUrl: string;
@@ -240,6 +241,7 @@ export default function PDFViewer({
   activeSymbol, symbolEmForPage, onSymbolPlaced, onSymbolMenu, onExitSymbolTool,
   onEraseStart, onEraseEnd, onUserScroll,
 }: Props) {
+  const t = useT();
   // Use stable clientId for ownership checks; fall back to socketId for legacy callers.
   const myId = myClientId || mySocketId;
   // Stable empty set so callers that don't pass hiddenOwners get correct filtering.
@@ -889,7 +891,7 @@ export default function PDFViewer({
     if (activeTool === 'text') {
       const pos = getPagePos(e, pageIndex);
       if (!pos) return;
-      const text = window.prompt('Enter text:');
+      const text = window.prompt(t('Enter text:'));
       if (text) onAnnotationAdd({ id: crypto.randomUUID(), type: 'text', page: pageIndex, x: pos.x, y: pos.y, text, color, fontSize: 0.03 });
       return;
     }
@@ -1102,7 +1104,7 @@ export default function PDFViewer({
       <div className="flex items-center justify-center h-full bg-[#f5f5f7] text-gray-400">
         <div className="flex flex-col items-center gap-3">
           <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
-          <div className="text-sm">Loading score…</div>
+          <div className="text-sm">{t('Loading score…')}</div>
         </div>
       </div>
     );
@@ -1141,7 +1143,7 @@ export default function PDFViewer({
             className="flex flex-col items-center gap-2"
             style={{ width: meta.width, maxWidth: '100%' }}
           >
-            <div className="text-gray-400 text-xs font-medium">Page {pageIndex + 1}</div>
+            <div className="text-gray-400 text-xs font-medium">{t('Page {n}', { n: pageIndex + 1 })}</div>
             <div className="relative bg-white rounded-xl overflow-hidden ring-1 ring-black/[0.06] shadow-[0_8px_30px_rgba(0,0,0,0.10)] w-full">
               <div style={{ paddingBottom: `${(meta.height / meta.width) * 100}%` }} />
 
@@ -1149,7 +1151,7 @@ export default function PDFViewer({
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
                   <div className="flex flex-col items-center gap-2 text-gray-300">
                     <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-400 rounded-full animate-spin" />
-                    <span className="text-xs">Page {pageIndex + 1}</span>
+                    <span className="text-xs">{t('Page {n}', { n: pageIndex + 1 })}</span>
                   </div>
                 </div>
               )}
@@ -1348,7 +1350,7 @@ export default function PDFViewer({
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
                       <path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                     </svg>
-                    Delete
+                    {t('Delete')}
                   </button>
                 );
               })()}
@@ -1364,7 +1366,7 @@ export default function PDFViewer({
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage === 0}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-25 transition-colors"
-            aria-label="Previous page"
+            aria-label={t('Previous page')}
           >
             <ChevronLeft />
           </button>
@@ -1375,7 +1377,7 @@ export default function PDFViewer({
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage >= pageMetas.length - 1}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-25 transition-colors"
-            aria-label="Next page"
+            aria-label={t('Next page')}
           >
             <ChevronRight />
           </button>

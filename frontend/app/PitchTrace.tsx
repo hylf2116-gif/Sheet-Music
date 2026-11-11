@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { freqToNote, medianOf } from '../lib/pitch';
 import type { PitchReading } from '../hooks/usePitch';
+import { useT } from '../lib/i18n';
 
 export interface RemotePitchEntry {
   senderId: string;
@@ -106,6 +107,7 @@ function drawTrace(
 }
 
 export default function PitchTrace({ pitchReading, a4Ref, remotePitches, shareEnabled, onShareChange, onClose, myName }: Props) {
+  const t = useT();
   const [minimized, setMinimized] = useState(false);
   const [pos, setPos] = useState({ x: window.innerWidth - 340, y: 120 });
   // Clock for "is this remote sender still active" (render must not call Date.now directly).
@@ -214,7 +216,7 @@ export default function PitchTrace({ pitchReading, a4Ref, remotePitches, shareEn
           <svg viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
           </svg>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>Live Pitch</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>{t('Live Pitch')}</span>
           {remoteList.length > 0 && (
             <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: '1px 6px' }}>
               +{remoteList.length}
@@ -293,7 +295,7 @@ export default function PitchTrace({ pitchReading, a4Ref, remotePitches, shareEn
                 }} />
               </div>
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.3 }}>
-                Share my pitch with the room
+                {t('Share my pitch with the room')}
               </span>
             </label>
           </div>

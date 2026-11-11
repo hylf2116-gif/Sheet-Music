@@ -81,8 +81,9 @@ export function usePitch(
           setError(
             name === 'NotAllowedError' || name === 'PermissionDeniedError'
               ? 'Microphone access denied. Please allow mic access and try again.'
-              : `Could not access microphone: ${err instanceof Error ? err.message : String(err)}`,
+              : 'Could not access the microphone. Check that no other app is using it.',
           );
+          console.warn('Microphone error:', err);
         }
       }
     }

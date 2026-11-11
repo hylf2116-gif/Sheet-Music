@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import type { SymbolId } from './symbols';
 import { SYMBOL_LABELS } from './symbols';
 import SymbolPopover, { SymbolIcon, type SymbolSize } from './SymbolPalette';
+import { useT } from '../lib/i18n';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -117,6 +118,7 @@ const ICONS: Record<string, React.ReactNode> = {
   layoutT:   (<><rect x="3" y="3" width="18" height="5" rx="1.5" /><rect x="3" y="11" width="18" height="10" rx="1.5" /></>),
   layoutL:   (<><rect x="3" y="3" width="6" height="18" rx="1.5" /><rect x="12" y="3" width="9" height="18" rx="1.5" /></>),
   layoutR:   (<><rect x="15" y="3" width="6" height="18" rx="1.5" /><rect x="3" y="3" width="9" height="18" rx="1.5" /></>),
+  gear:      (<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>),
   download:  (<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>),
   chat:         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
   pages:        (<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>),
@@ -136,6 +138,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Toolbar(p: ToolbarProps) {
+  const t = useT();
   const [showPosMenu, setShowPosMenu] = useState(false);
   // Full symbol palette opened from the "All" button (screen position of the popover).
   const [symbolPaletteAt, setSymbolPaletteAt] = useState<{ left: number; top: number } | null>(null);
@@ -152,7 +155,8 @@ export default function Toolbar(p: ToolbarProps) {
 
   // ── Shared atoms ────────────────────────────────────────────────────────────
 
-  function ToolBtn({ id, label }: { id: string; label: string }) {
+  function ToolBtn({ id, label: rawLabel }: { id: string; label: string }) {
+    const label = t(rawLabel);
     const active = p.activeTool === id;
     const laser  = id === 'laser';
     const base   = 'transition-all duration-150 flex items-center justify-center';
@@ -212,7 +216,7 @@ export default function Toolbar(p: ToolbarProps) {
     return (
       <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'px-2 pb-1' : 'shrink-0'}`}>
         {sizes.map(s => (
-          <button key={s.label} onClick={() => p.setStrokeWidth(s.w)} title={s.label}
+          <button key={s.label} onClick={() => p.setStrokeWidth(s.w)} title={t(s.label)}
             className={`rounded-lg flex items-center justify-center transition-colors shrink-0 ${p.compact ? 'w-10 h-10' : p.pos === 'top' ? 'w-7 h-7' : 'flex-1 h-7'} ${
               p.strokeWidth === s.w ? 'bg-black/[0.08]' : 'hover:bg-black/[0.04]'
             }`}>
@@ -229,9 +233,9 @@ export default function Toolbar(p: ToolbarProps) {
   // Highlighter opacity slider (10%–90%).
   function OpacityRow() {
     return (
-      <div className={`flex items-center gap-1.5 shrink-0 ${p.pos !== 'top' ? 'px-2 pb-1.5' : ''}`} title="Highlighter opacity">
-        <span className="text-[10px] text-gray-500 select-none">Opacity</span>
-        <input type="range" min={10} max={90} step={5} aria-label="Highlighter opacity"
+      <div className={`flex items-center gap-1.5 shrink-0 ${p.pos !== 'top' ? 'px-2 pb-1.5' : ''}`} title={t('Highlighter opacity')}>
+        <span className="text-[10px] text-gray-500 select-none">{t('Opacity')}</span>
+        <input type="range" min={10} max={90} step={5} aria-label={t('Highlighter opacity')}
           value={Math.round(p.highlighterOpacity * 100)}
           onChange={e => p.setHighlighterOpacity(Number(e.target.value) / 100)}
           className={p.pos === 'top' ? 'w-20' : 'flex-1 min-w-0'} style={{ accentColor: '#6366f1' }} />
@@ -247,24 +251,24 @@ export default function Toolbar(p: ToolbarProps) {
     return (
       <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'flex-wrap px-2 pb-1.5' : 'shrink-0'}`}>
         {quick.map(id => (
-          <button key={id} onClick={() => p.onPickSymbol(id)} title={SYMBOL_LABELS[id]} aria-label={SYMBOL_LABELS[id]}
+          <button key={id} onClick={() => p.onPickSymbol(id)} title={t(SYMBOL_LABELS[id])} aria-label={t(SYMBOL_LABELS[id])}
             className={`h-7 px-1 rounded-lg flex items-center justify-center transition-colors ${
               id === p.activeSymbol ? 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-300' : 'text-gray-700 hover:bg-black/[0.05]'
             }`}>
             <SymbolIcon id={id} size={14} />
           </button>
         ))}
-        <button ref={allSymbolsBtnRef} title="All symbols" aria-label="All symbols"
+        <button ref={allSymbolsBtnRef} title={t('All symbols')} aria-label={t('All symbols')}
           onClick={() => {
             const r = allSymbolsBtnRef.current?.getBoundingClientRect();
             setSymbolPaletteAt(prev => prev ? null : { left: r ? r.left : 100, top: r ? r.bottom + 6 : 60 });
           }}
           className="h-7 px-2 rounded-lg text-xs font-medium text-gray-600 hover:bg-black/[0.05]">
-          All
+          {t('All|symbols')}
         </button>
         <div className={p.pos === 'top' ? 'w-px h-5 bg-black/[0.08] mx-1' : 'w-full h-px bg-black/[0.05] my-1'} />
         {(['S', 'M', 'L'] as const).map(s => (
-          <button key={s} onClick={() => p.setSymbolSize(s)} title={`Size ${s}`}
+          <button key={s} onClick={() => p.setSymbolSize(s)} title={t('Size {s}', { s })}
             className={`w-7 h-7 rounded-lg text-xs font-semibold transition-colors ${
               p.symbolSize === s ? 'bg-black/[0.08] text-gray-900' : 'text-gray-500 hover:bg-black/[0.04]'
             }`}>
@@ -292,7 +296,7 @@ export default function Toolbar(p: ToolbarProps) {
               className={`px-2.5 ${p.compact ? 'h-9 px-4 text-sm' : 'h-7'} rounded-lg text-xs font-medium transition-colors ${
                 p.eraserMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
               }`}>
-              {m === 'stroke' ? 'Stroke' : 'Pixel'}
+              {m === 'stroke' ? t('Stroke|eraser') : t('Pixel|eraser')}
             </button>
           ))}
         </div>
@@ -342,11 +346,12 @@ export default function Toolbar(p: ToolbarProps) {
   const posIcons: Record<ToolbarPos, string> = { top: 'layoutT', left: 'layoutL', right: 'layoutR' };
   const posLabels: Record<ToolbarPos, string> = { top: 'Top bar', left: 'Left sidebar', right: 'Right sidebar' };
 
+  // Toolbar position menu (wide screens only). Language is chosen before entering a room.
   function PosMenu() {
     return (
       <div className="relative">
-        <button onClick={() => setShowPosMenu(v => !v)} title="Toolbar position"
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-black/[0.04] transition-colors">
+        <button onClick={() => setShowPosMenu(v => !v)} title={t('Toolbar position')} aria-label={t('Toolbar position')}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-black/[0.04] transition-colors shrink-0">
           <Icon name={posIcons[p.pos]} size={14} />
         </button>
         {showPosMenu && (
@@ -354,19 +359,23 @@ export default function Toolbar(p: ToolbarProps) {
             <div className="fixed inset-0 z-40" onClick={() => setShowPosMenu(false)} />
             <div className={`absolute z-50 rounded-2xl shadow-xl py-1.5 overflow-hidden ${
               p.pos === 'top' ? 'top-full right-0 mt-1.5' : p.pos === 'left' ? 'left-full bottom-0 ml-2' : 'right-full bottom-0 mr-2'
-            }`} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', minWidth: 172, backdropFilter: 'blur(20px)' }}>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-3 pt-1 pb-1.5">Toolbar position</p>
-              {(['top', 'left', 'right'] as ToolbarPos[]).map(opt => (
-                <button key={opt}
-                  onClick={() => { p.onPosChange(opt); setShowPosMenu(false); }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors ${
-                    p.pos === opt ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-50'
-                  }`}>
-                  <Icon name={posIcons[opt]} size={14} />
-                  <span>{posLabels[opt]}</span>
-                  {p.pos === opt && <span className="ml-auto text-indigo-400">✓</span>}
-                </button>
-              ))}
+            }`} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.08)', width: 220, backdropFilter: 'blur(20px)' }}>
+              {(
+                <>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-3 pt-1 pb-1.5">{t('Toolbar position')}</p>
+                  {(['top', 'left', 'right'] as ToolbarPos[]).map(opt => (
+                    <button key={opt}
+                      onClick={() => { p.onPosChange(opt); setShowPosMenu(false); }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors ${
+                        p.pos === opt ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700 hover:bg-gray-50'
+                      }`}>
+                      <Icon name={posIcons[opt]} size={14} />
+                      <span>{t(posLabels[opt])}</span>
+                      {p.pos === opt && <span className="ml-auto text-indigo-400">✓</span>}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           </>
         )}
@@ -380,7 +389,7 @@ export default function Toolbar(p: ToolbarProps) {
     return (
       <button onClick={() => toggle(id)}
         className="w-full flex items-center justify-between px-3 py-1.5 group select-none">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">{label}</span>
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">{t(label)}</span>
         <Icon name="chevronD" size={11} />
       </button>
     );
@@ -395,14 +404,14 @@ export default function Toolbar(p: ToolbarProps) {
     const contextRow = isAnnotate && (isDraw || p.activeTool === 'eraser');
     return (
       <div className="flex flex-col select-none shrink-0"
-        style={{ width: '100%', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px) saturate(1.8)', borderBottom: '1px solid rgba(0,0,0,0.06)', paddingTop: 'env(safe-area-inset-top)' }}>
+        style={{ position: 'relative', zIndex: 45, width: '100%', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px) saturate(1.8)', borderBottom: '1px solid rgba(0,0,0,0.06)', paddingTop: 'env(safe-area-inset-top)' }}>
         {/* Row 1: home, room status, share */}
         <div className="flex items-center gap-1 px-2" style={{ height: 48 }}>
-          <button onClick={p.onGoHome} aria-label="Home" className={`${iconBtn} text-indigo-600`}>
+          <button onClick={p.onGoHome} aria-label={t('Home')} className={`${iconBtn} text-indigo-600`}>
             <Icon name="music" size={19} />
           </button>
           {p.nickname && (
-            <button onClick={p.onRename} title="Change name"
+            <button onClick={p.onRename} title={t('Change name')}
               className="text-xs text-gray-500 rounded-md px-1.5 py-1 truncate min-w-0 max-w-[110px]">
               {p.isHost ? '👑 ' : ''}{p.nickname}
             </button>
@@ -411,7 +420,7 @@ export default function Toolbar(p: ToolbarProps) {
           <div className="flex-1" />
           {p.isHost ? (
             <>
-              <button onClick={p.onToggleScrollSync} aria-label={p.scrollSyncEnabled ? 'Scroll sync on' : 'Scroll sync off'}
+              <button onClick={p.onToggleScrollSync} aria-label={p.scrollSyncEnabled ? t('Scroll sync on') : t('Scroll sync off')}
                 className={`${iconBtn} ${p.scrollSyncEnabled ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'}`}>
                 <Icon name="sync" size={16} />
               </button>
@@ -423,26 +432,26 @@ export default function Toolbar(p: ToolbarProps) {
               )}
             </>
           ) : (
-            <button onClick={p.onToggleHand} aria-label={p.handRaised ? 'Lower hand' : 'Raise hand'}
+            <button onClick={p.onToggleHand} aria-label={p.handRaised ? t('Lower hand') : t('Raise hand')}
               className={`h-9 px-2.5 rounded-lg text-sm shrink-0 ${p.handRaised ? 'bg-amber-100 text-amber-700' : 'text-gray-500'}`}>
-              ✋{p.handRaised ? ' Lower' : ''}
+              ✋{p.handRaised ? ' ' + t('Lower') : ''}
             </button>
           )}
-          <button onClick={p.onCopyLink} aria-label="Copy share link"
+          <button onClick={p.onCopyLink} aria-label={t('Copy share link')}
             className={`flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-medium shrink-0 ${
               p.copied ? 'bg-green-500 text-white' : 'bg-gray-900 text-white'
             }`}>
             <Icon name={p.copied ? 'check' : 'link'} size={15} />
-            {p.copied ? 'Copied' : 'Share'}
+            {p.copied ? t('Copied') : t('Share')}
           </button>
         </div>
         {/* Row 2: tools (swipe sideways for more) + undo/redo/clear */}
         <div className="flex items-center gap-0.5 px-2 overflow-x-auto no-scrollbar" style={{ height: 50, borderTop: '1px solid rgba(0,0,0,0.04)' }}>
           {ANNOTATE_TOOLS.map(t => <ToolBtn key={t.id} id={t.id} label={t.label} />)}
           <Divider />
-          <button onClick={p.onUndo} disabled={!p.canUndo} aria-label="Undo" className={iconBtn}><Icon name="undo" size={18} /></button>
-          <button onClick={p.onRedo} disabled={!p.canRedo} aria-label="Redo" className={iconBtn}><Icon name="redo" size={18} /></button>
-          <button onClick={p.onClearAll} aria-label="Clear all" className={`${iconBtn} hover:text-red-500`}><Icon name="trash" size={18} /></button>
+          <button onClick={p.onUndo} disabled={!p.canUndo} aria-label={t('Undo')} className={iconBtn}><Icon name="undo" size={18} /></button>
+          <button onClick={p.onRedo} disabled={!p.canRedo} aria-label={t('Redo')} className={iconBtn}><Icon name="redo" size={18} /></button>
+          <button onClick={p.onClearAll} aria-label={t('Clear all')} className={`${iconBtn} hover:text-red-500`}><Icon name="trash" size={18} /></button>
         </div>
         {/* Row 3: options for the current tool */}
         {contextRow && (
@@ -457,7 +466,7 @@ export default function Toolbar(p: ToolbarProps) {
   if (p.pos === 'top') {
     return (
       <div className="flex flex-col select-none shrink-0"
-        style={{ width: '100%', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px) saturate(1.8)', borderBottom: '1px solid rgba(0,0,0,0.06)', animation: 'tbFadeIn 0.18s ease' }}>
+        style={{ position: 'relative', zIndex: 45, width: '100%', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px) saturate(1.8)', borderBottom: '1px solid rgba(0,0,0,0.06)', animation: 'tbFadeIn 0.18s ease' }}>
 
         {/* ── Main bar ─────────────────────────────────────────────────── */}
         <div className="flex items-center" style={{ height: 52 }}>
@@ -481,15 +490,15 @@ export default function Toolbar(p: ToolbarProps) {
 
             <Divider />
 
-            <button onClick={p.onUndo} disabled={!p.canUndo} title="Undo (Cmd/Ctrl+Z)"
+            <button onClick={p.onUndo} disabled={!p.canUndo} title={t('Undo (Cmd/Ctrl+Z)')}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 disabled:opacity-30 transition-colors shrink-0">
               <Icon name="undo" size={16} />
             </button>
-            <button onClick={p.onRedo} disabled={!p.canRedo} title="Redo (Shift+Cmd/Ctrl+Z)"
+            <button onClick={p.onRedo} disabled={!p.canRedo} title={t('Redo (Shift+Cmd/Ctrl+Z)')}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 disabled:opacity-30 transition-colors shrink-0">
               <Icon name="redo" size={16} />
             </button>
-            <button onClick={p.onClearAll} title="Clear all"
+            <button onClick={p.onClearAll} title={t('Clear all')}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500 transition-colors shrink-0">
               <Icon name="trash" size={16} />
             </button>
@@ -518,13 +527,13 @@ export default function Toolbar(p: ToolbarProps) {
               <>
                 <span className="text-[11px] font-semibold text-amber-600 select-none px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-100 shrink-0">👑</span>
                 {p.nickname && (
-                  <button onClick={p.onRename} title="Change name"
+                  <button onClick={p.onRename} title={t('Change name')}
                     className="text-[11px] text-gray-500 hover:text-gray-800 hover:bg-black/[0.04] rounded-md px-1.5 py-0.5 transition-colors shrink-0 max-w-[90px] truncate">
                     {p.nickname}
                   </button>
                 )}
                 <span className="text-[11px] text-gray-400 select-none tabular-nums shrink-0">{p.participantCount}</span>
-                <button onClick={p.onToggleScrollSync} title={p.scrollSyncEnabled ? 'Scroll sync on' : 'Scroll sync off'}
+                <button onClick={p.onToggleScrollSync} title={p.scrollSyncEnabled ? t('Scroll sync on') : t('Scroll sync off')}
                   className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
                     p.scrollSyncEnabled ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-gray-700 hover:bg-black/[0.04]'
                   }`}>
@@ -543,10 +552,10 @@ export default function Toolbar(p: ToolbarProps) {
                   className={`flex items-center gap-1 h-7 px-2 rounded-lg text-[11px] font-medium transition-colors shrink-0 ${
                     p.handRaised ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-700'
                   }`}>
-                  ✋ {p.handRaised ? 'Lower' : 'Raise hand'}
+                  ✋ {p.handRaised ? t('Lower') : t('Raise hand')}
                 </button>
                 {p.nickname && (
-                  <button onClick={p.onRename} title="Change name"
+                  <button onClick={p.onRename} title={t('Change name')}
                     className="text-[11px] text-gray-500 hover:text-gray-800 hover:bg-black/[0.04] rounded-md px-1.5 py-0.5 transition-colors shrink-0 max-w-[90px] truncate">
                     {p.nickname}
                   </button>
@@ -561,7 +570,7 @@ export default function Toolbar(p: ToolbarProps) {
                 p.copied ? 'bg-green-500 text-white' : 'bg-gray-900 text-white hover:bg-gray-700'
               }`}>
               <Icon name={p.copied ? 'check' : 'link'} size={14} />
-              {p.copied ? 'Copied' : 'Share'}
+              {p.copied ? t('Copied') : t('Share')}
             </button>
 
             <PosMenu />
@@ -581,6 +590,8 @@ export default function Toolbar(p: ToolbarProps) {
     <div className="flex flex-col select-none"
       style={{
         width: 192,
+        position: 'relative',
+        zIndex: 45,
         flexShrink: 0,
         alignSelf: 'stretch',
         background: 'rgba(255,255,255,0.88)',
@@ -637,12 +648,12 @@ export default function Toolbar(p: ToolbarProps) {
                 </button>
               </div>
             ) : (
-              <p className="text-[10px] text-gray-400 px-2 py-1">Single page</p>
+              <p className="text-[10px] text-gray-400 px-2 py-1">{t('Single page')}</p>
             )}
             {/* Undo / Clear */}
-            <SideRow icon="undo" label="Undo" disabled={!p.canUndo} onClick={p.onUndo} />
-            <SideRow icon="redo" label="Redo" disabled={!p.canRedo} onClick={p.onRedo} />
-            <SideRow icon="trash" label="Clear all" danger onClick={p.onClearAll} />
+            <SideRow icon="undo" label={t('Undo')} disabled={!p.canUndo} onClick={p.onUndo} />
+            <SideRow icon="redo" label={t('Redo')} disabled={!p.canRedo} onClick={p.onRedo} />
+            <SideRow icon="trash" label={t('Clear all')} danger onClick={p.onClearAll} />
             {/* Scroll sync (host only) */}
             {p.isHost && (
               <button onClick={p.onToggleScrollSync}
@@ -650,7 +661,7 @@ export default function Toolbar(p: ToolbarProps) {
                   p.scrollSyncEnabled ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
                 }`}>
                 <Icon name="sync" size={15} />
-                <span className="text-xs font-medium">Scroll sync {p.scrollSyncEnabled ? 'ON' : 'OFF'}</span>
+                <span className="text-xs font-medium">{p.scrollSyncEnabled ? t('Scroll sync on') : t('Scroll sync off')}</span>
               </button>
             )}
             {/* Thumbnails */}
@@ -659,7 +670,7 @@ export default function Toolbar(p: ToolbarProps) {
                 p.thumbsOpen ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
               }`}>
               <Icon name="pages" size={15} />
-              <span className="text-xs font-medium">Thumbnails</span>
+              <span className="text-xs font-medium">{t('Thumbnails')}</span>
             </button>
             {/* Bookmark current page */}
             <button onClick={p.onToggleBookmark}
@@ -667,7 +678,7 @@ export default function Toolbar(p: ToolbarProps) {
                 p.bookmarkActive ? 'bg-amber-50 text-amber-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
               }`}>
               <Icon name={p.bookmarkActive ? 'bookmarkFill' : 'bookmark'} size={15} />
-              <span className="text-xs font-medium">{p.bookmarkActive ? 'Bookmarked' : 'Bookmark page'}</span>
+              <span className="text-xs font-medium">{p.bookmarkActive ? t('Bookmarked') : t('Bookmark page')}</span>
             </button>
           </div>
         )}
@@ -682,39 +693,39 @@ export default function Toolbar(p: ToolbarProps) {
               <>
                 <div className="flex items-center gap-2 px-2 py-1.5">
                   <span className="text-sm">👑</span>
-                  <span className="text-xs font-semibold text-amber-600">Host</span>
+                  <span className="text-xs font-semibold text-amber-600">{t('Host')}</span>
                 </div>
                 {p.nickname && (
                   <button onClick={p.onRename}
                     className="flex items-center gap-2 px-2 py-1.5 w-full rounded-xl text-left text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 transition-colors">
                     <span className="text-xs font-medium truncate">{p.nickname}</span>
-                    <span className="text-[10px] text-gray-400 ml-auto shrink-0">rename</span>
+                    <span className="text-[10px] text-gray-400 ml-auto shrink-0">{t('rename')}</span>
                   </button>
                 )}
                 {p.participantCount > 0 && (
                   <div className="flex items-center gap-2 px-2 py-1.5 text-gray-500">
                     <span className="text-sm">👥</span>
-                    <span className="text-xs font-medium">{p.participantCount} in room</span>
+                    <span className="text-xs font-medium">{t('{n} in room', { n: p.participantCount })}</span>
                   </div>
                 )}
                 {p.raisedHands.length > 0 && (
                   <button onClick={p.onOpenHandsPanel}
                     className="flex items-center gap-2 px-2 py-1.5 w-full rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors">
                     <span className="text-sm">✋</span>
-                    <span className="text-xs font-medium">{p.raisedHands.length} raised</span>
+                    <span className="text-xs font-medium">{t('{n} raised', { n: p.raisedHands.length })}</span>
                   </button>
                 )}
               </>
             ) : (
               <>
                 <div className="flex items-center gap-2 px-2 py-1.5 text-gray-400">
-                  <span className="text-xs font-medium">Participant</span>
+                  <span className="text-xs font-medium">{t('Participant')}</span>
                 </div>
                 {p.nickname && (
                   <button onClick={p.onRename}
                     className="flex items-center gap-2 px-2 py-1.5 w-full rounded-xl text-left text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 transition-colors">
                     <span className="text-xs font-medium truncate">{p.nickname}</span>
-                    <span className="text-[10px] text-gray-400 ml-auto shrink-0">rename</span>
+                    <span className="text-[10px] text-gray-400 ml-auto shrink-0">{t('rename')}</span>
                   </button>
                 )}
                 <button onClick={p.onToggleHand}
@@ -722,7 +733,7 @@ export default function Toolbar(p: ToolbarProps) {
                     p.handRaised ? 'bg-amber-50 text-amber-700' : 'text-gray-500 hover:bg-black/[0.04]'
                   }`}>
                   <span>✋</span>
-                  <span className="text-xs font-medium">{p.handRaised ? 'Lower hand' : 'Raise hand'}</span>
+                  <span className="text-xs font-medium">{p.handRaised ? t('Lower hand') : t('Raise hand')}</span>
                 </button>
               </>
             )}
@@ -740,12 +751,12 @@ export default function Toolbar(p: ToolbarProps) {
                 p.metronomePanelOpen ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
               }`}>
               <Icon name="metronome" size={15} />
-              <span className="text-xs font-medium">Metronome</span>
+              <span className="text-xs font-medium">{t('Metronome')}</span>
             </button>
             <button onClick={p.onExportPDF}
               className="flex items-center gap-2.5 w-full px-2 py-2 rounded-xl text-sm text-gray-500 hover:bg-black/[0.04] hover:text-gray-800 transition-colors">
               <Icon name="download" size={15} />
-              <span className="text-xs font-medium">Export PDF</span>
+              <span className="text-xs font-medium">{t('Export PDF')}</span>
             </button>
             <div className="relative">
               <button onClick={p.onToggleChat}
@@ -753,7 +764,7 @@ export default function Toolbar(p: ToolbarProps) {
                   p.chatOpen ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
                 }`}>
                 <Icon name="chat" size={15} />
-                <span className="text-xs font-medium">Chat</span>
+                <span className="text-xs font-medium">{t('Chat')}</span>
               </button>
               {p.chatUnread > 0 && !p.chatOpen && (
                 <span className="absolute top-1.5 right-2 w-4 h-4 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center leading-none pointer-events-none">
@@ -773,7 +784,7 @@ export default function Toolbar(p: ToolbarProps) {
             p.copied ? 'bg-green-500 text-white' : 'bg-gray-900 text-white hover:bg-gray-700'
           }`}>
           <Icon name={p.copied ? 'check' : 'link'} size={13} />
-          {p.copied ? 'Copied!' : 'Share'}
+          {p.copied ? t('Copied') : t('Share')}
         </button>
         <PosMenu />
       </div>
