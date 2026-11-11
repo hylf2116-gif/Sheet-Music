@@ -66,30 +66,84 @@ async function searchIMSLP(query) {
   const cached = getCached(query);
   if (cached) return cached;
 
-  await acquireImslpSlot();
+  // IMSLP's search needs every word to match, so a precise query like
+  // "Cello Suite No. 1 in G Major" often finds nothing. Try several passes,
+  // from strict to relaxed, then rank the merged hits by how well the title matches.
+  const keywords = keywordQuery(query);
+  const passes = [
+    { q: query, what: 'title', limit: 10 },
+    { q: keywords, what: 'title', limit: 30 },
+    { q: keywords, what: 'text', limit: 20 },
+  ];
 
-  const params = new URLSearchParams({
-    action: 'query',
-    list: 'search',
-    srsearch: query,
-    srlimit: '10',
-    format: 'json',
-  });
+  const byTitle = new Map();
+  for (const pass of passes) {
+    if (!pass.q) continue;
+    const hits = await runSearch(pass.q, pass.what, pass.limit);
+    for (const hit of hits) {
+      // Many short titles are redirects; show the real work page instead
+      const redirect = /#REDIRECT\s*\[\[([^\]]+)\]\]/i.exec(cleanSnippet(hit.snippet).replace(/\s+/g, ' '));
+      const title = redirect ? redirect[1].trim() : hit.title || '';
+      if (!title || byTitle.has(title)) continue;
+      byTitle.set(title, {
+        title,
+        description: redirect ? `Includes: ${hit.title}` : cleanSnippet(hit.snippet),
+        score: titleScore(hit.title || '', query),
+      });
+    }
+    if (byTitle.size >= 10) break;
+  }
 
-  const { status, body } = await httpsGetText(`https://imslp.org/api.php?${params}`);
-  if (status !== 200) throw new Error(`IMSLP returned HTTP ${status}`);
-
-  const json = JSON.parse(body);
-  const hits = json?.query?.search || [];
-
-  const results = hits.map(hit => ({
-    title: hit.title || '',
-    description: cleanSnippet(hit.snippet),
-    url: `https://imslp.org/wiki/${encodeURIComponent((hit.title || '').replace(/ /g, '_'))}`,
-  }));
+  const results = [...byTitle.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+    .map(({ title, description }) => ({
+      title,
+      description,
+      url: `https://imslp.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`,
+    }));
 
   setCache(query, results);
   return results;
+}
+
+async function runSearch(q, what, limit) {
+  await acquireImslpSlot();
+  const params = new URLSearchParams({
+    action: 'query', list: 'search', srsearch: q, srwhat: what, srlimit: String(limit), format: 'json',
+  });
+  // The trailing "&*" avoids IMSLP's "Security redirect" page for queries like "No.1"
+  const { status, body } = await httpsGetText(`https://imslp.org/api.php?${params}&*`);
+  if (status !== 200) throw new Error(`IMSLP returned HTTP ${status}`);
+  try {
+    return JSON.parse(body)?.query?.search || [];
+  } catch {
+    return [];
+  }
+}
+
+const NOISE_WORDS = new Set([
+  'in', 'no', 'nr', 'op', 'opus', 'the', 'of', 'and', 'for', 'a', 'major', 'minor', 'dur', 'moll',
+  'flat', 'sharp', 'bwv', 'k', 'kv', 'hob', 'd', 'c', 'e', 'f', 'g', 'b',
+]);
+
+function tokens(s) {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter(Boolean);
+}
+
+// Keep only the meaningful words: "Cello Suite No. 1 in G Major" -> "cello suite"
+function keywordQuery(query) {
+  return tokens(query).filter(t => !NOISE_WORDS.has(t) && !/^\d+$/.test(t)).join(' ');
+}
+
+// Count how many query words (numbers and keys included) appear in the title
+function titleScore(title, query) {
+  const titleWords = new Set(tokens(title));
+  return tokens(query).reduce((n, t) => {
+    if (titleWords.has(t)) return n + (/^\d+$/.test(t) ? 2 : 1);
+    if (titleWords.has(t + 's') || titleWords.has(t.replace(/s$/, ''))) return n + 0.8;
+    return n;
+  }, 0);
 }
 
 // ── SSRF / host allowlist ──────────────────────────────────────────────────
