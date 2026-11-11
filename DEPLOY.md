@@ -93,7 +93,7 @@ Open the Vercel address, then:
 
 ## Limits built in
 
-- PDF uploads: 50 MB each, 20 per hour per IP; new rooms: 60 per hour per IP
+- PDF uploads: 200 MB each, 20 per hour per IP; new rooms: 60 per hour per IP
 - IMSLP: 5 searches and 3 imports per minute per IP
 - Rooms only accept PDFs uploaded to this server
 - Students can only change or clear their own annotations; the host can change all

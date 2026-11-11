@@ -213,7 +213,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => { saveRoomsSync(); process.exit(0); });
 }
 
-const MAX_UPLOAD_MB = 50;
+const MAX_UPLOAD_MB = 200; // piano scores and full orchestral scores can be large
 const storage = multer.diskStorage({
   // Absolute path: works no matter which folder the server is started from.
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),

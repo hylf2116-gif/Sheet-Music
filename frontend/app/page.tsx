@@ -792,9 +792,9 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadError('');
-    // Same limit as the server (50 MB); checked here too so big files fail instantly.
-    if (file.size > 50 * 1024 * 1024) {
-      setUploadError('This PDF is larger than 50 MB. Try a smaller file.');
+    // Same limit as the server (200 MB); checked here too so big files fail instantly.
+    if (file.size > 200 * 1024 * 1024) {
+      setUploadError('This PDF is larger than 200 MB. Try a smaller file.');
       e.target.value = '';
       return;
     }

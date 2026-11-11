@@ -214,7 +214,7 @@ async function fetchWithRedirectCheck(startUrl, maxRedirects = 3, extraHeaders =
 
 // ── Import: download PDF from IMSLP ───────────────────────────────────────
 const DISCLAIMER_COOKIE = 'imslpdisclaimeraccepted=yes';
-const MAX_PDF_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_PDF_BYTES = 200 * 1024 * 1024; // 200 MB (same as uploads)
 
 async function importFromUrl(fileUrl, uploadsDir) {
   if (typeof fileUrl !== 'string' || !fileUrl.trim()) {
@@ -294,7 +294,7 @@ async function importFromUrl(fileUrl, uploadsDir) {
       if (aborted) return;
       size += chunk.length;
       if (size > MAX_PDF_BYTES) {
-        abort(Object.assign(new Error('File exceeds the 50 MB limit'), { code: 'TOO_LARGE' }));
+        abort(Object.assign(new Error('File exceeds the 200 MB limit'), { code: 'TOO_LARGE' }));
         return;
       }
       if (!ws.write(chunk)) res.pause();
