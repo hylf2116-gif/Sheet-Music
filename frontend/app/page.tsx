@@ -18,6 +18,7 @@ import RaisedHandsPanel from './RaisedHandsPanel';
 import { upsertSession, fetchRecentSessions, type RecentSession } from '../lib/sessions';
 import AccountPanel, { type PanelTab, type Theme } from './AccountPanel';
 import IMSLPPanel from './IMSLPPanel';
+import GuestSettings from './GuestSettings';
 import ChatPanel, { type ChatMessage } from './ChatPanel';
 import ThumbnailPanel from './ThumbnailPanel';
 import TunerPanel from './TunerPanel';
@@ -28,7 +29,7 @@ import SymbolPopover, { SYMBOL_SIZE_FACTOR, DEFAULT_SYMBOL_EM, makeSymbolAnnotat
 import type { SymbolId } from './symbols';
 import { usePhone, useNarrow } from './useMediaQuery';
 import OMRPanel, { type OmrState, type OmrPrefs, type OmrMeasure, DEFAULT_OMR_PREFS } from './OMRPanel';
-import { useT, useLang, type TFunc } from '../lib/i18n';
+import { useT, type TFunc } from '../lib/i18n';
 
 const OMR_PREFS_KEY = 'unino_omr_prefs';
 
@@ -185,7 +186,6 @@ function relativeTime(iso: string, t: TFunc): string {
 
 export default function Home() {
   const t = useT();
-  const { lang, setLang } = useLang();
   // Socket handlers are set up once; they read the current language through this ref.
   const tRef = useRef(t);
   useEffect(() => { tRef.current = t; }, [t]);
@@ -1260,16 +1260,6 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-2">
-            {/* Language switch: shows the language you can switch to, in that language */}
-            <button onClick={() => setLang(lang === 'zh' ? 'en' : 'zh')}
-              title={t('Language')} aria-label={t('Language')}
-              className="flex items-center gap-1.5 h-9 px-3 rounded-full text-sm font-medium transition-colors"
-              style={{ color: 'var(--t2)', border: '1px solid var(--border)' }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
-                <circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-              </svg>
-              {lang === 'zh' ? 'EN' : '中文'}
-            </button>
             {!authLoading && (
               user ? (
                 <div className="relative" ref={userMenuRef}>
@@ -1314,12 +1304,15 @@ export default function Home() {
                   )}
                 </div>
               ) : (
+                <>
+                <GuestSettings />
                 <button
                   onClick={() => setShowAuthModal(true)}
                   className="px-4 py-2 text-sm font-semibold unino-signin-btn"
                 >
                   {t('Sign in')}
                 </button>
+                </>
               )
             )}
             </div>
