@@ -5,6 +5,7 @@ import type { SymbolId } from './symbols';
 import { SYMBOL_LABELS } from './symbols';
 import SymbolPopover, { SymbolIcon, type SymbolSize } from './SymbolPalette';
 import { useT } from '../lib/i18n';
+import { PERSON_PALETTE } from './ColorModePicker';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -63,6 +64,10 @@ export interface ToolbarProps {
   onOpenHandsPanel?: () => void;
   // Phone layout: two rows (status + tools) with larger touch targets
   compact?: boolean;
+  // Color by person: my color (all my marks use it), and whether I may change it
+  personColor?: string;
+  canPickPersonColor?: boolean;
+  onPickPersonColor?: (c: string) => void;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -186,6 +191,33 @@ export default function Toolbar(p: ToolbarProps) {
 
   function ColorRow() {
     const dotSize = p.compact ? 26 : p.pos === 'top' ? 18 : 17;
+    // Color by person: one color for all my marks.
+    if (p.personColor) {
+      if (!p.canPickPersonColor) {
+        return (
+          <div className={`flex items-center gap-1.5 ${p.pos === 'top' ? 'shrink-0' : 'px-2 pt-1'}`}
+            title={t('Your color is set by the host')}>
+            <span className="rounded-full shrink-0" style={{ width: dotSize, height: dotSize, backgroundColor: p.personColor,
+              boxShadow: `0 0 0 2px white, 0 0 0 3.5px ${p.personColor}` }} />
+            <span className="text-[11px] text-gray-500 whitespace-nowrap select-none">{t('Your color')}</span>
+          </div>
+        );
+      }
+      return (
+        <div className={`flex items-center ${p.compact ? 'gap-2.5' : 'gap-1.5'} ${p.pos === 'top' ? 'shrink-0' : 'flex-wrap px-2 pt-1'}`}
+          title={t('Your color (used for all your marks)')}>
+          {PERSON_PALETTE.map(c => (
+            <button key={c} onClick={() => p.onPickPersonColor?.(c)} aria-label={t('Your color')}
+              className="rounded-full transition-transform hover:scale-110 shrink-0" style={{ width: dotSize, height: dotSize }}>
+              <span className="block w-full h-full rounded-full" style={{
+                backgroundColor: c,
+                boxShadow: p.personColor === c ? `0 0 0 2px white, 0 0 0 3.5px ${c}` : 'inset 0 0 0 1px rgba(0,0,0,0.12)',
+              }} />
+            </button>
+          ))}
+        </div>
+      );
+    }
     return (
       <div className={`flex ${p.compact ? 'gap-2.5' : 'gap-1.5'} ${p.pos === 'top' ? 'shrink-0' : 'flex-wrap px-2 pt-1'}`}>
         {PRESET_COLORS.map(c => (

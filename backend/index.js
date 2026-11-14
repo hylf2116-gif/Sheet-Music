@@ -261,8 +261,35 @@ function deduplicateNickname(name, roomId, excludeClientId) {
 const imslp = require('./imslp');
 
 // ── HTTP routes ────────────────────────────────────────────────────────────
+// ── Color by person ──────────────────────────────────────────────────────────
+// colorMode: 'free'     everyone picks any color per stroke (default, old rooms)
+//            'assigned' each person has one color; only the host can change it
+//            'self'     each person has one color and may change their own
+// Everyone who joins gets a distinct default color so marks are told apart at once.
+const COLOR_MODES = ['free', 'assigned', 'self'];
+// Readable on white paper; red first for the teacher.
+const PERSON_PALETTE = ['#e53935', '#1e88e5', '#43a047', '#8e24aa', '#fb8c00', '#00897b', '#d81b60', '#6d4c41', '#3949ab', '#7cb342'];
+const isHexColor = (c) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c);
+const cleanColorMode = (m) => (COLOR_MODES.includes(m) ? m : 'free');
+
+function ensurePersonColor(room, clientId, isHost) {
+  if (!room.colorMode || room.colorMode === 'free' || !clientId) return false;
+  if (!room.personColors) room.personColors = {};
+  if (room.personColors[clientId]) return false;
+  const used = new Set(Object.values(room.personColors));
+  const pick = isHost && !used.has(PERSON_PALETTE[0])
+    ? PERSON_PALETTE[0]
+    : PERSON_PALETTE.find((c, i) => i > 0 && !used.has(c)) || PERSON_PALETTE[Object.keys(room.personColors).length % PERSON_PALETTE.length];
+  room.personColors[clientId] = pick;
+  return true;
+}
+
+function personColorsPayload(room) {
+  return { mode: room.colorMode || 'free', colors: room.personColors || {}, names: room.personNames || {}, hostClientId: room.hostClientId || null };
+}
+
 app.post('/create-room', createRoomLimit, async (req, res) => {
-  const { pdfUrl, scoreName: rawScoreName, creatorId, clientId, supabaseToken } = req.body || {};
+  const { pdfUrl, scoreName: rawScoreName, creatorId, clientId, supabaseToken, colorMode } = req.body || {};
   // Only PDFs uploaded to this server, and only if the file exists.
   if (typeof pdfUrl !== 'string' || !/^\/uploads\/[\w-]+\.pdf$/i.test(pdfUrl)
       || !fs.existsSync(path.join(UPLOADS_DIR, path.basename(pdfUrl)))) {
@@ -291,6 +318,8 @@ app.post('/create-room', createRoomLimit, async (req, res) => {
     hostTokenHash: hashToken(hostToken),
     hostClientId: clientId ?? null,
     hostUserId,
+    colorMode: cleanColorMode(colorMode),
+    personColors: {},
   };
   saveRooms();
   res.json({ roomId, hostToken });
@@ -349,7 +378,7 @@ app.post('/imslp/import', async (req, res) => {
   if (!imslp.checkUserImportLimit(ip)) {
     return res.status(429).json({ error: 'rate_limited', message: 'Max 3 IMSLP imports per minute. Please wait.' });
   }
-  const { fileUrl, pageUrl, clientId, supabaseToken } = req.body;
+  const { fileUrl, pageUrl, clientId, supabaseToken, colorMode } = req.body;
   if (!fileUrl) return res.status(400).json({ error: 'missing_url', message: 'fileUrl is required.' });
 
   try {
@@ -385,6 +414,8 @@ app.post('/imslp/import', async (req, res) => {
       hostTokenHash: hashToken(hostToken),
       hostClientId: clientId ?? null,
       hostUserId,
+      colorMode: cleanColorMode(colorMode),
+      personColors: {},
       imslpSource: {
         pageUrl: pageUrl || fileUrl,
         fileUrl: finalUrl,
@@ -597,7 +628,45 @@ io.on('connection', (socket) => {
       currentPage: room.currentPage ?? 0,
     });
     socket.emit('omr-state', omrStateFor(room));
+    // Remember names by clientId so the color list still shows people who have left.
+    if (!room.personNames) room.personNames = {};
+    const nameChanged = room.personNames[clientIdForSocket] !== nick;
+    room.personNames[clientIdForSocket] = nick;
+    if (ensurePersonColor(room, clientIdForSocket, isHostSocket) || (nameChanged && room.colorMode && room.colorMode !== 'free')) {
+      saveRooms();
+      io.to(roomId).emit('person-colors', personColorsPayload(room));
+    } else {
+      socket.emit('person-colors', personColorsPayload(room));
+    }
     emitMemberCount(roomId);
+  });
+
+  // Change one person's color: the host may change anyone's; in 'self' mode people may change their own.
+  socket.on('set-person-color', ({ roomId, clientId, color }) => {
+    const room = rooms[roomId];
+    if (!room || currentRoom !== roomId || !isHexColor(color) || typeof clientId !== 'string') return;
+    if (!room.colorMode || room.colorMode === 'free') return;
+    const allowed = isHostSocket || (room.colorMode === 'self' && clientId === clientIdForSocket);
+    if (!allowed || !room.personColors || !(clientId in room.personColors)) return;
+    room.personColors[clientId] = color.toLowerCase();
+    saveRooms();
+    io.to(roomId).emit('person-colors', personColorsPayload(room));
+  });
+
+  // The host can switch the mode later (e.g. forgot to turn it on when creating the room).
+  socket.on('set-color-mode', ({ roomId, mode }) => {
+    const room = rooms[roomId];
+    if (!room || currentRoom !== roomId || !isHostSocket || !COLOR_MODES.includes(mode)) return;
+    room.colorMode = mode;
+    if (mode !== 'free') {
+      if (!room.personColors) room.personColors = {};
+      // Give a color to everyone in the room now, and to everyone who already drew.
+      if (room.hostClientId) ensurePersonColor(room, room.hostClientId, true);
+      for (const sid of io.sockets.adapter.rooms.get(roomId) || []) ensurePersonColor(room, socketClientId[sid], false);
+      for (const sh of room.shapes) ensurePersonColor(room, sh.ownerId, false);
+    }
+    saveRooms();
+    io.to(roomId).emit('person-colors', personColorsPayload(room));
   });
 
   // OMR: only the host may start measure detection (slow, CPU-heavy).
@@ -633,6 +702,10 @@ io.on('connection', (socket) => {
     socketNames[socket.id] = nick;
     socket.emit('nickname-assigned', { nickname: nick });
     socket.to(roomId).emit('name-changed', { socketId: socket.id, clientId: clientIdForSocket, nickname: nick });
+    if (!room.personNames) room.personNames = {};
+    room.personNames[clientIdForSocket] = nick;
+    saveRooms();
+    if (room.colorMode && room.colorMode !== 'free') io.to(roomId).emit('person-colors', personColorsPayload(room));
   });
 
   socket.on('new-shape', ({ roomId, shape }) => {

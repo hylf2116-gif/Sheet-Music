@@ -19,6 +19,7 @@ import { upsertSession, fetchRecentSessions, type RecentSession } from '../lib/s
 import AccountPanel, { type PanelTab, type Theme } from './AccountPanel';
 import IMSLPPanel from './IMSLPPanel';
 import GuestSettings from './GuestSettings';
+import ColorModePicker, { loadColorMode, COLOR_MODE_KEY, type ColorMode } from './ColorModePicker';
 import ChatPanel, { type ChatMessage } from './ChatPanel';
 import ThumbnailPanel from './ThumbnailPanel';
 import TunerPanel from './TunerPanel';
@@ -270,6 +271,21 @@ export default function Home() {
   const [myClientId] = useState(() => getOrCreateClientId());
   const [mySocketId, setMySocketId] = useState('');
   const [isHost, setIsHost] = useState(false);
+  // ── Color by person ──
+  // Choice for the next room this browser creates (remembered).
+  const [newRoomColorMode, setNewRoomColorMode] = useState<ColorMode>('free');
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load saved choice after mount (localStorage is not available during server render)
+    setNewRoomColorMode(loadColorMode());
+  }, []);
+  function chooseNewRoomColorMode(m: ColorMode) {
+    setNewRoomColorMode(m);
+    try { localStorage.setItem(COLOR_MODE_KEY, m); } catch {}
+  }
+  // The current room's mode and each person's color (clientId → color), sent by the server.
+  const [colorMode, setColorMode] = useState<ColorMode>('free');
+  const [personColors, setPersonColors] = useState<Record<string, string>>({});
+  const [personNames, setPersonNames] = useState<Record<string, string>>({});
 
   // Page navigation
   const [currentPage, setCurrentPage] = useState(0);
@@ -535,10 +551,38 @@ export default function Home() {
     }
     return Array.from(seen.entries()).map(([ownerId, idx]) => {
       const isMe = ownerId === myClientId;
-      const label = nicknameMap[ownerId] || (isMe ? (nickname || 'You') : 'Guest');
-      return { ownerId, label, color: OWNER_COLORS[idx % OWNER_COLORS.length], isMe };
+      const label = nicknameMap[ownerId] || personNames[ownerId] || (isMe ? (nickname || 'You') : 'Guest');
+      const color = (colorMode !== 'free' && personColors[ownerId]) || OWNER_COLORS[idx % OWNER_COLORS.length];
+      return { ownerId, label, color, isMe };
     });
-  }, [annotations, myClientId, nicknameMap, nickname]);
+  }, [annotations, myClientId, nicknameMap, nickname, colorMode, personColors, personNames]);
+
+  // With color by person, every mark is shown in its owner's color (so changing a color recolors their marks).
+  const byPerson = colorMode !== 'free';
+  const myPersonColor = byPerson ? personColors[myClientId] : undefined;
+  const displayAnnotations = useMemo(() => {
+    if (!byPerson) return annotations;
+    return annotations.map(a => {
+      const c = a.ownerId && personColors[a.ownerId];
+      return c && a.color !== c ? { ...a, color: c } : a;
+    });
+  }, [annotations, byPerson, personColors]);
+  // People who have a color in this room (everyone who joined, plus anyone who drew).
+  const colorPeople = useMemo(() => Object.entries(personColors).map(([cid, c]) => ({
+    clientId: cid,
+    color: c,
+    label: nicknameMap[cid] || personNames[cid] || (cid === myClientId ? (nickname || 'You') : 'Guest'),
+    isMe: cid === myClientId,
+  })), [personColors, personNames, nicknameMap, myClientId, nickname]);
+  function setPersonColor(clientId: string, c: string) {
+    if (!roomId) return;
+    setPersonColors(prev => ({ ...prev, [clientId]: c })); // show at once; the server confirms
+    socket.emit('set-person-color', { roomId, clientId, color: c });
+  }
+  function setRoomColorMode(m: ColorMode) {
+    if (!roomId || !isHost) return;
+    socket.emit('set-color-mode', { roomId, mode: m });
+  }
 
   // ── Shared helpers ────────────────────────────────────────────────────────
   function changeToolbarPos(p: ToolbarPos) {
@@ -696,6 +740,11 @@ export default function Home() {
         return next;
       });
     });
+    socket.on('person-colors', ({ mode, colors, names }: { mode: ColorMode; colors: Record<string, string>; names?: Record<string, string> }) => {
+      setColorMode(mode === 'assigned' || mode === 'self' ? mode : 'free');
+      setPersonColors(colors || {});
+      setPersonNames(names || {});
+    });
     socket.on('host-claimed', ({ hostToken }: { hostToken: string }) => {
       if (roomIdRef.current) {
         try { localStorage.setItem(`unino_host_${roomIdRef.current}`, hostToken); } catch {}
@@ -753,7 +802,7 @@ export default function Home() {
       socket.off('raise-hand'); socket.off('lower-hand');
       socket.off('nickname-assigned'); socket.off('nickname-map');
       socket.off('member-joined'); socket.off('member-left'); socket.off('name-changed');
-      socket.off('host-claimed');
+      socket.off('host-claimed'); socket.off('person-colors');
       socket.off('scroll-sync'); socket.off('room-members-count');
       socket.off('metronome-update');
       socket.off('chat-history'); socket.off('chat-message');
@@ -832,7 +881,7 @@ export default function Home() {
     const res = await fetch(backendUrl('/create-room'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pdfUrl: url, scoreName: sn, creatorId: user?.id ?? null, clientId: myClientId, supabaseToken }),
+      body: JSON.stringify({ pdfUrl: url, scoreName: sn, creatorId: user?.id ?? null, clientId: myClientId, supabaseToken, colorMode: newRoomColorMode }),
     });
     const { roomId: rid, hostToken } = await res.json();
     try { localStorage.setItem(`unino_host_${rid}`, hostToken); } catch {};
@@ -965,6 +1014,9 @@ export default function Home() {
     setBookmarks([]);
     setLayersOpen(false);
     setHiddenOwners(new Set());
+    setColorMode('free');
+    setPersonColors({});
+    setPersonNames({});
     setImslpSource(null);
     setShowHandsPanel(false);
     setNicknameMap({});
@@ -1201,7 +1253,7 @@ export default function Home() {
     if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
       const suggested = buildSuggestedFilename(pdfUrl, scoreName) + '.pdf';
       try {
-        await exportAnnotatedPDF(pdfUrl, annotations, suggested);
+        await exportAnnotatedPDF(pdfUrl, displayAnnotations, suggested);
       } catch (err: any) {
         if (err?.name !== 'AbortError') addToast(t('Export failed'));
       }
@@ -1214,8 +1266,8 @@ export default function Home() {
     setShowExportModal(false);
     if (!pdfUrl) return;
     const annsToExport = onlyVisible
-      ? annotations.filter(a => !hiddenOwners.has(a.ownerId))
-      : annotations;
+      ? displayAnnotations.filter(a => !hiddenOwners.has(a.ownerId))
+      : displayAnnotations;
     try {
       await exportAnnotatedPDF(pdfUrl, annsToExport, filename);
       addToast(t('Saved to Downloads folder'));
@@ -1428,6 +1480,7 @@ export default function Home() {
                   <h2 className="text-xl font-bold mb-2 u-text">{t('Start a session')}</h2>
                   <p className="text-sm leading-relaxed" style={{ color: 'var(--t2)' }}>{t('Upload a PDF score and create a room. Share the link with anyone to collaborate.')}</p>
                 </div>
+                <ColorModePicker value={newRoomColorMode} onChange={chooseNewRoomColorMode} />
                 <label className={`w-full py-3 text-sm font-semibold text-center cursor-pointer transition-colors ${loading ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
                   style={{ borderRadius: 'var(--r-md)' }}>
                   {loading ? t('Uploading…') : t('+ Upload Score')}
@@ -1484,6 +1537,7 @@ export default function Home() {
                 </div>
                 <IMSLPPanel
                   clientId={myClientId}
+                  colorMode={newRoomColorMode}
                   user={user}
                   onImportSuccess={handleIMSLPImport}
                 />
@@ -1535,6 +1589,9 @@ export default function Home() {
   const toolbarProps = {
     pos: toolbarPos,
     compact: isNarrow,
+    personColor: myPersonColor,
+    canPickPersonColor: colorMode === 'self' || isHost,
+    onPickPersonColor: (c: string) => setPersonColor(myClientId, c),
     onPosChange: changeToolbarPos,
     activeTool,
     setActiveTool,
@@ -1607,10 +1664,10 @@ export default function Home() {
           {pdfUrl && (
             <PDFViewer
               pdfUrl={pdfUrl}
-              annotations={annotations}
+              annotations={displayAnnotations}
               activeTool={activeTool}
               eraserMode={eraserMode}
-              color={isHighlighter ? hl.color : color}
+              color={myPersonColor ?? (isHighlighter ? hl.color : color)}
               strokeWidth={isHighlighter ? hl.width : strokeWidth}
               highlighterOpacity={hl.opacity}
               isHost={isHost}
@@ -1771,6 +1828,11 @@ export default function Home() {
         <LayersPopover
           owners={owners}
           hiddenOwners={hiddenOwners}
+          colorMode={colorMode}
+          isHost={isHost}
+          people={colorPeople}
+          onSetPersonColor={setPersonColor}
+          onSetColorMode={setRoomColorMode}
           rightOffset={
             chatOpen ? 314
             : toolbarPos === 'right' ? 206

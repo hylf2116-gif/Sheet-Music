@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useT } from '../lib/i18n';
+import ColorModePicker, { PERSON_PALETTE, type ColorMode } from './ColorModePicker';
 
 export interface LayerOwner {
   ownerId: string;
@@ -18,13 +19,24 @@ interface Props {
   onShowAll: () => void;
   onOnlyMine: () => void;
   onClose: () => void;
+  // Color by person
+  colorMode: ColorMode;
+  isHost: boolean;
+  people: { clientId: string; label: string; color: string; isMe: boolean }[];
+  onSetPersonColor: (clientId: string, color: string) => void;
+  onSetColorMode: (mode: ColorMode) => void;
 }
 
 export default function LayersPopover({
   owners, hiddenOwners, rightOffset,
   onToggle, onShowAll, onOnlyMine, onClose,
+  colorMode, isHost, people, onSetPersonColor, onSetColorMode,
 }: Props) {
   const t = useT();
+  // Whose color swatches are open for picking (clientId)
+  const [picking, setPicking] = useState<string | null>(null);
+  const byPerson = colorMode !== 'free';
+  const canEdit = (cid: string, isMe: boolean) => isHost || (colorMode === 'self' && isMe);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -98,6 +110,42 @@ export default function LayersPopover({
       </div>
 
       <div style={{ height: 1, background: 'var(--divider)', margin: '0 10px 4px' }} />
+
+      {/* Colors by person */}
+      {(isHost || byPerson) && (
+        <div style={{ padding: '2px 10px 8px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {isHost && <ColorModePicker value={colorMode} onChange={onSetColorMode} compact />}
+          {byPerson && people.map(person => {
+            const editable = canEdit(person.clientId, person.isMe);
+            return (
+              <div key={person.clientId}>
+                <button type="button" disabled={!editable}
+                  onClick={() => setPicking(p => (p === person.clientId ? null : person.clientId))}
+                  title={editable ? t('Change color') : undefined}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '3px 0', background: 'transparent',
+                    border: 'none', cursor: editable ? 'pointer' : 'default', color: 'var(--t)', fontSize: 13, textAlign: 'left' }}>
+                  <span style={{ width: 14, height: 14, borderRadius: 7, background: person.color, flexShrink: 0,
+                    boxShadow: editable ? '0 0 0 2px var(--modal-bg), 0 0 0 3px var(--border-md)' : 'none' }} />
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {person.label}{person.isMe && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--t3)' }}>{t('you')}</span>}
+                  </span>
+                </button>
+                {picking === person.clientId && editable && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 0 6px 22px' }}>
+                    {PERSON_PALETTE.map(c => (
+                      <button key={c} type="button" aria-label={t('Change color')}
+                        onClick={() => { onSetPersonColor(person.clientId, c); setPicking(null); }}
+                        style={{ width: 20, height: 20, borderRadius: 10, background: c, border: 'none', cursor: 'pointer',
+                          boxShadow: c === person.color ? `0 0 0 2px var(--modal-bg), 0 0 0 3.5px ${c}` : 'inset 0 0 0 1px rgba(0,0,0,0.12)' }} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <div style={{ height: 1, background: 'var(--divider)', margin: '2px 0 0' }} />
+        </div>
+      )}
 
       {/* Owner rows */}
       {owners.length === 0 ? (

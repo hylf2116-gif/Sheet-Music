@@ -23,11 +23,12 @@ interface ImportResult {
 
 interface Props {
   clientId: string;
+  colorMode?: string;
   user: User | null;
   onImportSuccess: (data: ImportResult) => void;
 }
 
-export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
+export default function IMSLPPanel({ clientId, colorMode, user, onImportSuccess }: Props) {
   const t = useT();
   // ── Search state ───────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
@@ -104,7 +105,7 @@ export default function IMSLPPanel({ clientId, user, onImportSuccess }: Props) {
         res = await fetch(backendUrl('/imslp/import'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fileUrl: url, clientId, supabaseToken }),
+          body: JSON.stringify({ fileUrl: url, clientId, supabaseToken, colorMode }),
         });
       } catch {
         setImportError({ message: 'Could not reach our server. Check your connection.' });

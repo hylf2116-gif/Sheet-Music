@@ -233,6 +233,16 @@ export const ZH: Record<string, string> = {
   'Show layer': '显示这一层',
   'Hide layer': '隐藏这一层',
 
+  // ── Color by person ───────────────────────────────────────────────────
+  'Annotation colors': '标注颜色',
+  'Any color for any mark': '自由选色（每一笔都能换颜色）',
+  'One color per person — host assigns': '按人分色 · 老师指定',
+  'One color per person — everyone picks their own': '按人分色 · 各自选择',
+  'Your color': '我的颜色',
+  'Your color is set by the host': '你的颜色由老师指定',
+  'Your color (used for all your marks)': '我的颜色（我画的所有标注都用这个颜色）',
+  'Change color': '换颜色',
+
   // ── Pages panel ───────────────────────────────────────────────────────
   'Pages': '页面',
   'All pages': '全部页面',
