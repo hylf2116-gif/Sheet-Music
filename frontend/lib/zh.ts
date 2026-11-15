@@ -132,6 +132,7 @@ export const ZH: Record<string, string> = {
   'Your name…': '输入你的名字…',
   'Name must be 1–20 characters.': '名字需要 1–20 个字。',
   'Join': '进入课堂',
+  'Back to home': '返回首页',
 
   // ── Room: toolbar ─────────────────────────────────────────────────────
   'Home': '首页',

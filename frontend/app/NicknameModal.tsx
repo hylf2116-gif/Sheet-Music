@@ -8,9 +8,11 @@ interface Props {
   dismissible?: boolean;
   onConfirm: (name: string) => void;
   onClose?: () => void;
+  // Leave without joining (shown while entering a room)
+  onExit?: () => void;
 }
 
-export default function NicknameModal({ defaultValue, dismissible = false, onConfirm, onClose }: Props) {
+export default function NicknameModal({ defaultValue, dismissible = false, onConfirm, onClose, onExit }: Props) {
   const t = useT();
   const [value, setValue] = useState(defaultValue);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,7 +32,7 @@ export default function NicknameModal({ defaultValue, dismissible = false, onCon
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') submit();
-    if (e.key === 'Escape' && dismissible) onClose?.();
+    if (e.key === 'Escape') { if (dismissible) onClose?.(); else onExit?.(); }
   }
 
   return (
@@ -59,9 +61,12 @@ export default function NicknameModal({ defaultValue, dismissible = false, onCon
               {dismissible ? t('Change your name') : t('Enter your name')}
             </h2>
           </div>
-          {dismissible && onClose && (
+          {(dismissible ? onClose : onExit) && (
             <button
-              onClick={onClose}
+              onClick={dismissible ? onClose : onExit}
+              aria-label={dismissible ? t('Close') : t('Back to home')}
+              title={dismissible ? t('Close') : t('Back to home')}
+              className="hover:bg-white/10 transition-colors"
               style={{ width: 28, height: 28, border: 'none', background: 'transparent', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: 'var(--t3)', borderRadius: 7 }}
@@ -132,6 +137,20 @@ export default function NicknameModal({ defaultValue, dismissible = false, onCon
             {dismissible ? t('Save') : t('Join')}
           </button>
         </div>
+
+        {!dismissible && onExit && (
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'center' }}>
+            <button onClick={onExit}
+              className="group inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors hover:bg-white/[0.06]"
+              style={{ fontSize: 12, fontWeight: 500, color: 'var(--t3)', border: 'none', background: 'transparent', cursor: 'pointer' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+                className="transition-transform group-hover:-translate-x-0.5" style={{ width: 13, height: 13 }}>
+                <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
+              </svg>
+              <span className="group-hover:text-[var(--t)] transition-colors">{t('Back to home')}</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

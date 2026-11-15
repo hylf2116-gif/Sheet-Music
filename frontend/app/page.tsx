@@ -1932,6 +1932,7 @@ export default function Home() {
           dismissible={pendingRoomId === null}
           onConfirm={confirmNickname}
           onClose={() => setShowNicknameModal(false)}
+          onExit={goHome}
         />
       )}
 
