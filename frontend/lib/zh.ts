@@ -235,9 +235,15 @@ export const ZH: Record<string, string> = {
 
   // ── Color by person ───────────────────────────────────────────────────
   'Annotation colors': '标注颜色',
-  'Any color for any mark': '自由选色（每一笔都能换颜色）',
-  'One color per person — host assigns': '按人分色 · 老师指定',
-  'One color per person — everyone picks their own': '按人分色 · 各自选择',
+  'Free': '自由选色',
+  'Host assigns': '老师指定',
+  'Each picks': '各自选择',
+  'Anyone can use any color for any mark.': '每个人每一笔都可以用任何颜色。',
+  'Everyone gets their own color, and only the host can change it.': '每人一个专属颜色，只有老师可以更改。',
+  'Everyone gets their own color and can pick a different one.': '每人一个专属颜色，自己可以换成喜欢的颜色。',
+  'Change': '更换',
+  'Done': '完成',
+  'Also used by {name}': '{name} 也在用这个颜色',
   'Your color': '我的颜色',
   'Your color is set by the host': '你的颜色由老师指定',
   'Your color (used for all your marks)': '我的颜色（我画的所有标注都用这个颜色）',

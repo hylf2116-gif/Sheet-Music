@@ -56,7 +56,7 @@ export default function LayersPopover({
         top: '50%',
         transform: 'translateY(-50%)',
         zIndex: 40,
-        width: 230,
+        width: 260,
         backgroundColor: 'var(--modal-bg)',
         border: '1px solid var(--border-md)',
         borderRadius: 14,
@@ -113,37 +113,55 @@ export default function LayersPopover({
 
       {/* Colors by person */}
       {(isHost || byPerson) && (
-        <div style={{ padding: '2px 10px 8px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ padding: '2px 12px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {isHost && <ColorModePicker value={colorMode} onChange={onSetColorMode} compact />}
-          {byPerson && people.map(person => {
-            const editable = canEdit(person.clientId, person.isMe);
-            return (
-              <div key={person.clientId}>
-                <button type="button" disabled={!editable}
-                  onClick={() => setPicking(p => (p === person.clientId ? null : person.clientId))}
-                  title={editable ? t('Change color') : undefined}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '3px 0', background: 'transparent',
-                    border: 'none', cursor: editable ? 'pointer' : 'default', color: 'var(--t)', fontSize: 13, textAlign: 'left' }}>
-                  <span style={{ width: 14, height: 14, borderRadius: 7, background: person.color, flexShrink: 0,
-                    boxShadow: editable ? '0 0 0 2px var(--modal-bg), 0 0 0 3px var(--border-md)' : 'none' }} />
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {person.label}{person.isMe && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--t3)' }}>{t('you')}</span>}
-                  </span>
-                </button>
-                {picking === person.clientId && editable && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '4px 0 6px 22px' }}>
-                    {PERSON_PALETTE.map(c => (
-                      <button key={c} type="button" aria-label={t('Change color')}
-                        onClick={() => { onSetPersonColor(person.clientId, c); setPicking(null); }}
-                        style={{ width: 20, height: 20, borderRadius: 10, background: c, border: 'none', cursor: 'pointer',
-                          boxShadow: c === person.color ? `0 0 0 2px var(--modal-bg), 0 0 0 3.5px ${c}` : 'inset 0 0 0 1px rgba(0,0,0,0.12)' }} />
-                    ))}
+          {byPerson && people.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {people.map(person => {
+                const editable = canEdit(person.clientId, person.isMe);
+                const open = picking === person.clientId && editable;
+                const initial = (person.label.trim()[0] || '?').toUpperCase();
+                return (
+                  <div key={person.clientId} style={{ borderRadius: 10, background: open ? 'var(--surface)' : 'transparent', padding: open ? '4px 6px 8px' : '0 6px' }}>
+                    <button type="button" disabled={!editable}
+                      onClick={() => setPicking(p => (p === person.clientId ? null : person.clientId))}
+                      title={editable ? t('Change color') : undefined}
+                      style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '4px 0', background: 'transparent',
+                        border: 'none', cursor: editable ? 'pointer' : 'default', color: 'var(--t)', fontSize: 13, textAlign: 'left' }}>
+                      <span style={{ width: 24, height: 24, borderRadius: 12, background: person.color, flexShrink: 0, color: 'white',
+                        fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{initial}</span>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {person.label}{person.isMe && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--t3)' }}>{t('you')}</span>}
+                      </span>
+                      {editable && (
+                        <span style={{ fontSize: 11, color: open ? '#6366f1' : 'var(--t3)', flexShrink: 0 }}>{open ? t('Done') : t('Change')}</span>
+                      )}
+                    </button>
+                    {open && (
+                      <div role="radiogroup" aria-label={t('Change color')}
+                        style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, padding: '6px 0 0 33px' }}>
+                        {PERSON_PALETTE.map(c => {
+                          const on = c === person.color.toLowerCase();
+                          const takenBy = people.find(o => o.clientId !== person.clientId && o.color.toLowerCase() === c);
+                          return (
+                            <button key={c} type="button" role="radio" aria-checked={on}
+                              aria-label={takenBy ? t('Also used by {name}', { name: takenBy.label }) : t('Change color')}
+                              title={takenBy ? t('Also used by {name}', { name: takenBy.label }) : undefined}
+                              onClick={() => { onSetPersonColor(person.clientId, c); setPicking(null); }}
+                              style={{ width: 24, height: 24, borderRadius: 12, background: c, border: 'none', cursor: 'pointer', position: 'relative',
+                                boxShadow: on ? `0 0 0 2px var(--modal-bg), 0 0 0 4px ${c}` : 'none', opacity: takenBy && !on ? 0.45 : 1 }}>
+                              {on && <svg viewBox="0 0 24 24" style={{ width: 13, height: 13, position: 'absolute', inset: 0, margin: 'auto' }} fill="none" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-          <div style={{ height: 1, background: 'var(--divider)', margin: '2px 0 0' }} />
+                );
+              })}
+            </div>
+          )}
+          <div style={{ height: 1, background: 'var(--divider)' }} />
         </div>
       )}
 
