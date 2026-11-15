@@ -1,6 +1,7 @@
 'use client';
 
 import type { RecentSession } from '../lib/sessions';
+import type { LibraryRoom } from '../lib/library';
 import { useT, type TFunc } from '../lib/i18n';
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
   sessions?: RecentSession[];
   onOpenRoom?: (roomId: string) => void;
   onShowAllSessions?: () => void;
+  myRooms?: LibraryRoom[];
+  onShowLibrary?: () => void;
 }
 
 function relativeTime(iso: string, t: TFunc): string {
@@ -24,7 +27,7 @@ function relativeTime(iso: string, t: TFunc): string {
   return new Date(iso).toLocaleDateString(t('en-US'), { month: 'short', day: 'numeric' });
 }
 
-export default function Sidebar({ open, onToggle, sessions = [], onOpenRoom, onShowAllSessions }: Props) {
+export default function Sidebar({ open, onToggle, sessions = [], onOpenRoom, onShowAllSessions, myRooms = [], onShowLibrary }: Props) {
   const t = useT();
   return (
     <div
@@ -89,17 +92,38 @@ export default function Sidebar({ open, onToggle, sessions = [], onOpenRoom, onS
           )}
         </div>
 
-        {/* ── My Scores (stub) ────────────────────────────────────── */}
+        {/* ── My Scores ───────────────────────────────────────────── */}
         <div className="mb-1">
-          <div className={`flex items-center gap-3 px-3 py-2 mx-2 rounded-lg ${open ? '' : 'justify-center'}`}>
+          <button type="button" onClick={onShowLibrary} title={t('My Scores')}
+            className={`flex items-center gap-3 px-3 py-2 mx-2 rounded-lg hover:bg-white/[0.05] transition-colors ${open ? '' : 'justify-center'}`}
+            style={{ width: 'calc(100% - 16px)' }}>
             <span className="text-sm flex-shrink-0">🎼</span>
             {open && (
               <span className="text-[10px] font-semibold uppercase tracking-widest whitespace-nowrap text-gray-600">
                 {t('My Scores')}
               </span>
             )}
-          </div>
-          {open && <p className="text-[11px] text-gray-700 px-5 pb-2">{t('Nothing here yet.')}</p>}
+          </button>
+          {open && (myRooms.length === 0 ? (
+            <p className="text-[11px] text-gray-700 px-5 pb-2">{t('Nothing here yet.')}</p>
+          ) : (
+            <div className="flex flex-col gap-0.5 px-2 pb-1">
+              {myRooms.slice(0, 5).map(r => (
+                <button key={r.roomId} onClick={() => onOpenRoom?.(r.roomId)} title={r.scoreName}
+                  className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-xl text-left hover:bg-white/[0.05] transition-colors group">
+                  <span className="text-xs flex-shrink-0 text-gray-600">🎼</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium text-gray-400 group-hover:text-gray-200 truncate leading-tight">{r.scoreName}</p>
+                    {r.studentTag && <p className="text-[10px] text-gray-700 leading-tight mt-0.5 truncate">👤 {r.studentTag}</p>}
+                  </div>
+                </button>
+              ))}
+              <button onClick={onShowLibrary}
+                className="w-full text-left px-2.5 py-1.5 text-[10px] font-medium text-indigo-500 hover:text-indigo-400 transition-colors">
+                {t('Open My Scores →')}
+              </button>
+            </div>
+          ))}
         </div>
 
         {/* ── Favorites (stub) ────────────────────────────────────── */}

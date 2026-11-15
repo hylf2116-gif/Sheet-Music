@@ -320,6 +320,8 @@ app.post('/create-room', createRoomLimit, async (req, res) => {
     hostUserId,
     colorMode: cleanColorMode(colorMode),
     personColors: {},
+    createdAt: new Date().toISOString(),
+    lastActive: new Date().toISOString(),
   };
   saveRooms();
   res.json({ roomId, hostToken });
@@ -352,6 +354,77 @@ app.get('/room/:roomId', (req, res) => {
     imslpSource: room.imslpSource ?? null,
   });
 });
+
+// ── Score library (My Scores) ─────────────────────────────────────────────
+// Host check for HTTP requests: the room's host token, or the signed-in host account.
+async function requestIsHost(room, hostToken, supabaseToken) {
+  if (typeof hostToken === 'string' && room.hostTokenHash && safeCompareHash(hashToken(hostToken), room.hostTokenHash)) return true;
+  if (typeof supabaseToken === 'string' && room.hostUserId) {
+    try { return (await verifySupabaseToken(supabaseToken)) === room.hostUserId; } catch {}
+  }
+  return false;
+}
+
+function roomSummary(roomId, room) {
+  return {
+    roomId,
+    scoreName: room.scoreName ?? 'Untitled Score',
+    studentTag: room.studentTag ?? '',
+    createdAt: room.createdAt ?? null,
+    lastActive: room.lastActive ?? room.createdAt ?? null,
+    annotationCount: (room.shapes || []).length,
+  };
+}
+
+// Rooms this person hosts: by host tokens saved in their browser, or by their signed-in account.
+app.post('/my-rooms', async (req, res) => {
+  const { tokens, supabaseToken } = req.body || {};
+  let userId = null;
+  if (typeof supabaseToken === 'string') { try { userId = await verifySupabaseToken(supabaseToken); } catch {} }
+  const list = [];
+  for (const [roomId, room] of Object.entries(rooms)) {
+    const token = tokens && typeof tokens === 'object' ? tokens[roomId] : null;
+    const byToken = typeof token === 'string' && room.hostTokenHash && safeCompareHash(hashToken(token), room.hostTokenHash);
+    const byUser = userId && room.hostUserId === userId;
+    if (byToken || byUser) list.push(roomSummary(roomId, room));
+  }
+  list.sort((a, b) => String(b.lastActive).localeCompare(String(a.lastActive)));
+  res.json({ rooms: list });
+});
+
+// Rename a score or tag it with a student's name (host only).
+app.post('/room/:roomId/meta', async (req, res) => {
+  const room = rooms[req.params.roomId];
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  const { hostToken, supabaseToken, scoreName, studentTag } = req.body || {};
+  if (!(await requestIsHost(room, hostToken, supabaseToken))) return res.status(403).json({ error: 'Only the host can change this.' });
+  if (typeof scoreName === 'string' && scoreName.trim()) room.scoreName = scoreName.trim().slice(0, 120);
+  if (typeof studentTag === 'string') room.studentTag = studentTag.trim().slice(0, 60);
+  saveRooms();
+  res.json(roomSummary(req.params.roomId, room));
+});
+
+// Delete a room for everyone (host only): annotations, chat, and the PDF if no other room uses it.
+app.post('/room/:roomId/delete', async (req, res) => {
+  const roomId = req.params.roomId;
+  const room = rooms[roomId];
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  const { hostToken, supabaseToken } = req.body || {};
+  if (!(await requestIsHost(room, hostToken, supabaseToken))) return res.status(403).json({ error: 'Only the host can delete this room.' });
+  const pdf = roomPdfFile(room);
+  delete rooms[roomId];
+  saveRooms();
+  io.to(roomId).emit('room-deleted');
+  if (pdf) removePdfIfUnused(pdf);
+  res.json({ ok: true });
+});
+
+function removePdfIfUnused(pdf) {
+  const stillUsed = Object.values(rooms).some((r) => roomPdfFile(r)?.stem === pdf.stem);
+  if (stillUsed) return;
+  try { fs.unlinkSync(pdf.file); } catch {}
+  try { fs.rmSync(path.join(OMR_DIR, pdf.stem), { recursive: true, force: true }); } catch {}
+}
 
 // ── IMSLP routes (keep in own section for easy removal) ───────────────────
 app.get('/imslp/search', async (req, res) => {
@@ -416,6 +489,8 @@ app.post('/imslp/import', async (req, res) => {
       hostUserId,
       colorMode: cleanColorMode(colorMode),
       personColors: {},
+      createdAt: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
       imslpSource: {
         pageUrl: pageUrl || fileUrl,
         fileUrl: finalUrl,
@@ -628,6 +703,8 @@ io.on('connection', (socket) => {
       currentPage: room.currentPage ?? 0,
     });
     socket.emit('omr-state', omrStateFor(room));
+    room.lastActive = new Date().toISOString();
+    socket.emit('play-order', { order: room.playOrder ?? null });
     // Remember names by clientId so the color list still shows people who have left.
     if (!room.personNames) room.personNames = {};
     const nameChanged = room.personNames[clientIdForSocket] !== nick;
@@ -651,6 +728,42 @@ io.on('connection', (socket) => {
     room.personColors[clientId] = color.toLowerCase();
     saveRooms();
     io.to(roomId).emit('person-colors', personColorsPayload(room));
+  });
+
+  // Host rearranged the score (reordered / removed pages, added pages from other PDFs).
+  // pageMap[oldPage] = new page index, or -1 if that page was removed. Annotations move with their pages.
+  socket.on('replace-score', ({ roomId, pdfUrl, pageMap, pageCount }) => {
+    const room = rooms[roomId];
+    if (!room || currentRoom !== roomId || !isHostSocket) return;
+    if (typeof pdfUrl !== 'string' || !/^\/uploads\/[\w-]+\.pdf$/i.test(pdfUrl)
+        || !fs.existsSync(path.join(UPLOADS_DIR, path.basename(pdfUrl)))) return;
+    if (!Array.isArray(pageMap) || !pageMap.every((n) => Number.isInteger(n) && n >= -1 && n < 100000)) return;
+    const oldPdf = roomPdfFile(room);
+    room.shapes = room.shapes
+      .filter((sh) => Number.isInteger(sh.page) && pageMap[sh.page] !== undefined && pageMap[sh.page] >= 0)
+      .map((sh) => ({ ...sh, page: pageMap[sh.page] }));
+    room.pdfUrl = pdfUrl;
+    room.currentPage = 0;
+    room.highlightedMeasure = null;
+    room.playOrder = null; // page numbers changed, so an old play order no longer fits
+    if (Number.isInteger(pageCount)) room.pageCount = pageCount;
+    room.lastActive = new Date().toISOString();
+    saveRooms();
+    io.to(roomId).emit('score-replaced', { pdfUrl, shapes: room.shapes });
+    io.to(roomId).emit('play-order', { order: null });
+    io.to(roomId).emit('omr-state', omrStateFor(room));
+    if (oldPdf) removePdfIfUnused(oldPdf);
+  });
+
+  // Page play order for repeats (e.g. [0,1,2,1,2,3]); null turns it off. Host only.
+  socket.on('set-play-order', ({ roomId, order }) => {
+    const room = rooms[roomId];
+    if (!room || currentRoom !== roomId || !isHostSocket) return;
+    if (order !== null && !(Array.isArray(order) && order.length > 0 && order.length <= 500
+        && order.every((n) => Number.isInteger(n) && n >= 0 && n < 100000))) return;
+    room.playOrder = order;
+    saveRooms();
+    io.to(roomId).emit('play-order', { order });
   });
 
   // The host can switch the mode later (e.g. forgot to turn it on when creating the room).
@@ -721,6 +834,7 @@ io.on('connection', (socket) => {
       ? shape
       : { ...shape, ownerId: clientIdForSocket };
     room.shapes.push(saved);
+    room.lastActive = new Date().toISOString();
     saveRooms();
     socket.to(roomId).emit('new-shape', saved);
   });

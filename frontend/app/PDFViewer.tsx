@@ -48,6 +48,9 @@ interface Props {
   onEraseEnd?: () => void;
   // The viewer scrolled the score themselves (wheel / touch), not the app.
   onUserScroll?: () => void;
+  // Page arrows: step along the play order when one is set (otherwise ±1 page)
+  onStepPage?: (dir: 1 | -1) => void;
+  navLabel?: string;
   // Scroll precisely to a measure; nonce changes on every request.
   measureJump?: { page: number; y: number; n: number; nonce: number } | null;
 }
@@ -239,7 +242,7 @@ export default function PDFViewer({
   hiddenOwners,
   measuresByPage, showMeasureNumbers, highlightedMeasure, measureClickMode, onMeasureClick, measureJump,
   activeSymbol, symbolEmForPage, onSymbolPlaced, onSymbolMenu, onExitSymbolTool,
-  onEraseStart, onEraseEnd, onUserScroll,
+  onEraseStart, onEraseEnd, onUserScroll, onStepPage, navLabel,
 }: Props) {
   const t = useT();
   // Use stable clientId for ownership checks; fall back to socketId for legacy callers.
@@ -1363,8 +1366,8 @@ export default function PDFViewer({
       {pageMetas.length > 1 && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-gray-900/75 backdrop-blur-md text-white rounded-full px-1.5 py-1.5 shadow-2xl">
           <button
-            onClick={() => onPageChange(currentPage - 1)}
-            disabled={currentPage === 0}
+            onClick={() => (onStepPage ? onStepPage(-1) : onPageChange(currentPage - 1))}
+            disabled={!navLabel && currentPage === 0}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-25 transition-colors"
             aria-label={t('Previous page')}
           >
@@ -1372,10 +1375,11 @@ export default function PDFViewer({
           </button>
           <span className="text-[13px] font-medium tabular-nums px-3 select-none">
             {currentPage + 1} <span className="text-white/50">/</span> {pageMetas.length}
+            {navLabel && <span className="ml-1.5 text-[10px] text-indigo-300 whitespace-nowrap">· {navLabel}</span>}
           </span>
           <button
-            onClick={() => onPageChange(currentPage + 1)}
-            disabled={currentPage >= pageMetas.length - 1}
+            onClick={() => (onStepPage ? onStepPage(1) : onPageChange(currentPage + 1))}
+            disabled={!navLabel && currentPage >= pageMetas.length - 1}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-25 transition-colors"
             aria-label={t('Next page')}
           >

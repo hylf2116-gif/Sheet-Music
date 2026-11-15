@@ -15,7 +15,11 @@ import ExportModal from './ExportModal';
 import LayersPopover, { type LayerOwner } from './LayersPopover';
 import NicknameModal from './NicknameModal';
 import RaisedHandsPanel from './RaisedHandsPanel';
-import { upsertSession, fetchRecentSessions, type RecentSession } from '../lib/sessions';
+import { upsertSession, fetchRecentSessions, deleteSession, type RecentSession } from '../lib/sessions';
+import { fetchMyRooms, hasHostToken, deleteRoomForEveryone, type LibraryRoom } from '../lib/library';
+import ScoreLibrary from './ScoreLibrary';
+import RowMenu from './RowMenu';
+import ArrangePages from './ArrangePages';
 import AccountPanel, { type PanelTab, type Theme } from './AccountPanel';
 import IMSLPPanel from './IMSLPPanel';
 import GuestSettings from './GuestSettings';
@@ -59,6 +63,7 @@ const OWNER_COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4
 
 // ── Floating action cluster icons ─────────────────────────────────────────────
 const FC_ICONS: Record<string, React.ReactNode> = {
+  arrange: (<><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><path d="M14 6h4a3 3 0 0 1 3 3v0" /><path d="m19 7 2 2 2-2" /><path d="M10 18H6a3 3 0 0 1-3-3v0" /><path d="m5 17-2-2-2 2" /></>),
   more: (<><circle cx="5" cy="12" r="1.6" fill="currentColor" /><circle cx="12" cy="12" r="1.6" fill="currentColor" /><circle cx="19" cy="12" r="1.6" fill="currentColor" /></>),
   pages:        (<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>),
   chat:         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
@@ -83,6 +88,9 @@ interface FloatingClusterProps {
   omrOpen: boolean; omrRunning: boolean; onToggleOmr: () => void;
   onExportPDF: () => void;
   rightOffset: number;
+  // Host only: rearrange pages / play order
+  onArrange?: () => void;
+  playOrderOn?: boolean;
 }
 
 // One button of the floating cluster. Module-level so React keeps it stable between renders.
@@ -166,6 +174,7 @@ function FloatingCluster(p: FloatingClusterProps & { compact?: boolean }) {
       <FBtn icon="layers"    active={p.layersOpen}          onClick={p.onToggleLayers}       title={t('Annotation layers')} dot={p.hasHiddenLayers} />
       <FBtn icon="measures"  active={p.omrOpen}             onClick={p.onToggleOmr}          title={t('Measures (bar numbers, highlight, jump)')} dot={p.omrRunning} />
       <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 2px' }} />
+      {p.onArrange && <FBtn icon="arrange" active={false} onClick={p.onArrange} title={t('Arrange pages & play order')} dot={p.playOrderOn} />}
       <FBtn icon="download"  active={false}                 onClick={p.onExportPDF}          title={t('Export PDF')} />
       {p.compact && <FBtn icon="more" active onClick={() => setOpen(false)} title={t('Close')} />}
     </div>
@@ -321,6 +330,13 @@ export default function Home() {
   const remotePitchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
   const [showAllSessions, setShowAllSessions] = useState(false);
+  // My Scores: rooms this person hosts (from this browser's host tokens and their account).
+  const [myRooms, setMyRooms] = useState<LibraryRoom[]>([]);
+  const [showLibrary, setShowLibrary] = useState(false);
+  // Arrange pages / play order (host tool) and the room's play order for repeats.
+  const [arrangeOpen, setArrangeOpen] = useState(false);
+  const [playOrder, setPlayOrder] = useState<number[] | null>(null);
+  const [playPos, setPlayPos] = useState(0);
   const [accountPanel, setAccountPanel] = useState<PanelTab | null>(null);
   const [theme, setThemeState] = useState<Theme>('auto');
   const [scoreName, setScoreName] = useState('Untitled Score');
@@ -661,6 +677,23 @@ export default function Home() {
       setAnnotations(prev => prev.map(a => a.id === id ? { ...a, ...changes } : a)));
     socket.on('undo', (id: string) => setAnnotations(prev => prev.filter(a => a.id !== id)));
 
+    socket.on('play-order', ({ order }: { order: number[] | null }) => {
+      setPlayOrder(Array.isArray(order) && order.length ? order : null);
+      setPlayPos(0);
+    });
+    socket.on('score-replaced', ({ pdfUrl: newUrl, shapes }: { pdfUrl: string; shapes: any[] }) => {
+      // Page numbers changed: load the new PDF and the moved annotations, and start fresh history.
+      setPdfUrl(resolvePdfUrl(newUrl));
+      setAnnotations(shapes || []);
+      setUndoStack([]);
+      setRedoStack([]);
+      setCurrentPage(0);
+      addToast(tRef.current('The score was rearranged'));
+    });
+    socket.on('room-deleted', () => {
+      addToast(tRef.current('The host deleted this room.'));
+      goHomeRef.current();
+    });
     socket.on('room-info', ({ isHost: h, raisedHands: rh, currentPage: cp }: {
       isHost: boolean; raisedHands: string[]; currentPage: number;
     }) => {
@@ -802,7 +835,7 @@ export default function Home() {
       socket.off('raise-hand'); socket.off('lower-hand');
       socket.off('nickname-assigned'); socket.off('nickname-map');
       socket.off('member-joined'); socket.off('member-left'); socket.off('name-changed');
-      socket.off('host-claimed'); socket.off('person-colors');
+      socket.off('host-claimed'); socket.off('person-colors'); socket.off('room-deleted'); socket.off('play-order'); socket.off('score-replaced');
       socket.off('scroll-sync'); socket.off('room-members-count');
       socket.off('metronome-update');
       socket.off('chat-history'); socket.off('chat-message');
@@ -989,6 +1022,41 @@ export default function Home() {
     socket.emit('chat-message', { roomId, text, senderName });
   }
 
+  // Refresh My Scores whenever the home page shows (or the signed-in account changes).
+  useEffect(() => {
+    if (stage !== 'home') return;
+    let cancelled = false;
+    fetchMyRooms().then(list => { if (!cancelled) setMyRooms(list); });
+    return () => { cancelled = true; };
+  }, [stage, user?.id]);
+
+  // Recent list: hide a room for me only.
+  async function removeFromRecent(s: RecentSession) {
+    setRecentSessions(prev => prev.filter(x => x.id !== s.id));
+    await deleteSession(s.id);
+  }
+  // Delete a room for everyone (host only), then drop it from my lists.
+  async function deleteRoomEverywhere(rid: string, name: string) {
+    if (!window.confirm(t('Delete “{name}” for everyone? Its annotations and chat will be gone for good.', { name }))) return;
+    try {
+      await deleteRoomForEveryone(rid);
+      forgetRoom(rid);
+      addToast(t('Room deleted'));
+    } catch (e) {
+      addToast(t(e instanceof Error ? e.message : 'Could not delete the room.'));
+    }
+  }
+  function forgetRoom(rid: string) {
+    setMyRooms(prev => prev.filter(r => r.roomId !== rid));
+    setRecentSessions(prev => {
+      prev.filter(x => x.room_id === rid).forEach(x => { deleteSession(x.id); });
+      return prev.filter(x => x.room_id !== rid);
+    });
+  }
+  const iHostRoom = (rid: string) => hasHostToken(rid) || myRooms.some(r => r.roomId === rid);
+
+  const goHomeRef = useRef<() => void>(() => {});
+  useEffect(() => { goHomeRef.current = goHome; });
   function goHome() {
     if (roomId) socket.emit('leave-room', roomId);
     setStage('home');
@@ -1215,6 +1283,20 @@ export default function Home() {
     }
   }
 
+  // Page arrows: follow the play order (repeats) when one is set, otherwise go to the next/previous page.
+  function stepPage(dir: 1 | -1) {
+    if (!playOrder) { handlePageChange(currentPage + dir); return; }
+    // If the reader moved away, continue from the closest place in the order that shows this page.
+    let pos = playPos;
+    if (playOrder[pos] !== currentPage) {
+      const found = playOrder.findIndex((p, i) => p === currentPage && i >= pos);
+      pos = found >= 0 ? found : Math.max(0, playOrder.indexOf(currentPage));
+    }
+    const next = Math.max(0, Math.min(playOrder.length - 1, pos + dir));
+    setPlayPos(next);
+    handlePageChange(playOrder[next]);
+  }
+
   function handlePageChange(page: number, fromScroll = false) {
     if (!fromScroll) pauseFollowing('page');
     if (page < 0 || page >= numPages || page === currentPage) return;
@@ -1291,6 +1373,8 @@ export default function Home() {
             sessions={recentSessions}
             onOpenRoom={joinRoom}
             onShowAllSessions={() => setAccountPanel('sessions')}
+            myRooms={myRooms}
+            onShowLibrary={() => setShowLibrary(true)}
           />
         )}
 
@@ -1405,7 +1489,12 @@ export default function Home() {
             {user && (
               <div className="w-full max-w-2xl mb-10 text-left">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">{t('Recent')}</h3>
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">{t('Recent')}</h3>
+                    <button onClick={() => setShowLibrary(true)} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                      {t('My Scores')} →
+                    </button>
+                  </div>
                   {recentSessions.length > 5 && (
                     <button
                       onClick={() => setShowAllSessions(s => !s)}
@@ -1432,11 +1521,10 @@ export default function Home() {
                 ) : (
                   <div className="flex flex-col gap-2">
                     {(showAllSessions ? recentSessions : recentSessions.slice(0, 5)).map(s => (
+                      <div key={s.id} className="flex items-center gap-1 pr-2 group unino-session-row" style={{ borderRadius: 'var(--r-lg)' }}>
                       <button
-                        key={s.id}
                         onClick={() => joinRoom(s.room_id)}
-                        className="flex items-center gap-4 px-5 py-3.5 text-left group unino-session-row"
-                        style={{ borderRadius: 'var(--r-lg)' }}
+                        className="flex-1 min-w-0 flex items-center gap-4 px-5 py-3.5 text-left"
                       >
                         <div className="w-9 h-9 flex items-center justify-center flex-shrink-0"
                           style={{ borderRadius: 'var(--r-sm)', background: 'var(--accent-bg)', border: '1px solid rgba(94,92,230,0.2)' }}>
@@ -1457,10 +1545,25 @@ export default function Home() {
                           <path d="M9 18l6-6-6-6" />
                         </svg>
                       </button>
+                      <RowMenu items={[
+                        { label: t('Remove from Recent'), onClick: () => removeFromRecent(s) },
+                        ...(iHostRoom(s.room_id) ? [{ label: t('Delete room for everyone'), danger: true, onClick: () => deleteRoomEverywhere(s.room_id, s.score_name) }] : []),
+                      ]} />
+                      </div>
                     ))}
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Not signed in: My Scores still works from the host links saved in this browser */}
+            {!user && myRooms.length > 0 && (
+              <button onClick={() => setShowLibrary(true)}
+                className="w-full max-w-2xl mb-6 flex items-center justify-between px-5 py-3.5 text-left unino-session-row"
+                style={{ borderRadius: 'var(--r-lg)' }}>
+                <span className="text-sm font-medium u-text">🎼 {t('My Scores')}</span>
+                <span className="text-xs" style={{ color: 'var(--t3)' }}>{t('{n} scores', { n: myRooms.length })} →</span>
+              </button>
             )}
 
             {/* Action cards — always shown */}
@@ -1557,6 +1660,16 @@ export default function Home() {
 
         {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
 
+        {showLibrary && (
+          <ScoreLibrary
+            rooms={myRooms}
+            onRoomsChange={setMyRooms}
+            onOpen={rid => { setShowLibrary(false); joinRoom(rid); }}
+            onClose={() => setShowLibrary(false)}
+            onRoomDeleted={forgetRoom}
+          />
+        )}
+
         {accountPanel && user && (
           <AccountPanel
             user={user}
@@ -1627,7 +1740,7 @@ export default function Home() {
     onToggleScrollSync: toggleScrollSync,
     onToggleHand: toggleHand,
     onCopyLink: copyLink,
-    onPageChange: handlePageChange,
+    onPageChange: (page: number) => (playOrder ? stepPage(page > currentPage ? 1 : -1) : handlePageChange(page)),
     onToggleMetronome: () => setMetronomePanelOpen(o => !o),
     onExportPDF: handleExportPDF,
     chatOpen,
@@ -1676,6 +1789,8 @@ export default function Home() {
               remoteLasers={remoteLasers}
               currentPage={currentPage}
               onPageChange={handlePageChange}
+              onStepPage={stepPage}
+              navLabel={playOrder ? t('Play order {i}/{n}', { i: playPos + 1, n: playOrder.length }) : undefined}
               onNumPagesLoaded={setNumPages}
               onAnnotationAdd={handleAnnotationAdd}
               onAnnotationDelete={handleAnnotationDelete}
@@ -1738,6 +1853,8 @@ export default function Home() {
         onToggleOmr={() => setOmrOpen(o => !o)}
         onExportPDF={handleExportPDF}
         compact={isPhone}
+        onArrange={isHost ? () => setArrangeOpen(true) : undefined}
+        playOrderOn={!!playOrder}
         rightOffset={
           chatOpen ? 314
           : toolbarPos === 'right' ? 206
@@ -1777,6 +1894,26 @@ export default function Home() {
           </div>
         ))}
       </div>
+
+      {/* Arrange pages / play order (host) */}
+      {arrangeOpen && isHost && pdfUrl && roomId && (
+        <ArrangePages
+          pdfUrl={pdfUrl}
+          scoreName={scoreName}
+          numPages={numPages}
+          playOrder={playOrder}
+          onApply={(newUrl, pageMap, pageCount) => {
+            socket.emit('replace-score', { roomId, pdfUrl: newUrl, pageMap, pageCount });
+            setArrangeOpen(false);
+          }}
+          onSetPlayOrder={order => {
+            socket.emit('set-play-order', { roomId, order });
+            setArrangeOpen(false);
+            addToast(order ? t('Play order on') : t('Play order off'));
+          }}
+          onClose={() => setArrangeOpen(false)}
+        />
+      )}
 
       {/* Export modal */}
       {showExportModal && pdfUrl && (

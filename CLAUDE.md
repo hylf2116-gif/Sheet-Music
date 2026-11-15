@@ -64,16 +64,16 @@ Frontend (terminal 2):
 - Move/resize of annotations (drag handles)
 - Layers per person
 - Nicknames (`rename`)
-- Raise hand (raise, lower, dismiss)
-- Chat
+- Raise hand (raise, lower, dismiss); chat
 - Tuner with shared pitch updates
 - Shared metronome
-- Bookmarks, page thumbnails, page and scroll sync
-- Export annotated PDF (pdf-lib)
+- Bookmarks, page thumbnails, page and scroll sync; export annotated PDF (pdf-lib)
 - Accounts (Supabase Auth) and recent sessions
 - Measures (OMR): bar numbers, highlight, jump to bar, MusicXML export
 - Music symbols: Symbols tool, right-click / long-press palette, fingering keys 0–4
 - Undo/redo history in groups (one eraser swipe = one step); Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z, Ctrl+Y
-- "Follow teacher" chip for students: follows page, bar jumps and (if the teacher shares it) scroll;
-  hand-scrolling or changing page pauses it; one click jumps back to the teacher
-- Server saves rooms.json coalesced + atomically (temp file + rename) — overlapping writes used to corrupt it
+- "Follow teacher" chip for students (page, bar jumps, shared scroll; pauses on own scrolling)
+- Color by person (`colorMode` free/assigned/self, `personColors` per clientId; `ColorModePicker.tsx`)
+- My Scores library (`ScoreLibrary.tsx`, `lib/library.ts`, `POST /my-rooms`, `/room/:id/meta`, `/room/:id/delete`), grouped by student
+- Arrange pages / add PDFs / play order for repeats (`ArrangePages.tsx`, sockets `replace-score`, `set-play-order`)
+- rooms.json saves are coalesced + atomic (temp file + rename)
