@@ -7,15 +7,20 @@ import RowMenu from './RowMenu';
 
 // "My Scores": every score you host, grouped by student. Reopening a score returns to the same room,
 // with all annotations from earlier lessons.
-export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, onRoomDeleted }: {
+export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, onRoomDeleted, pinned = [], onTogglePin, student }: {
   rooms: LibraryRoom[];
   onRoomsChange: (rooms: LibraryRoom[]) => void;
   onOpen: (roomId: string) => void;
   onClose: () => void;
   onRoomDeleted: (roomId: string) => void;
+  pinned?: string[];
+  onTogglePin?: (roomId: string) => void;
+  // Show only one student's scores ('' = scores without a student); undefined = all
+  student?: string;
 }) {
   const t = useT();
   const [query, setQuery] = useState('');
+  const [onlyStudent, setOnlyStudent] = useState<string | undefined>(student);
   const [editing, setEditing] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
   const [draftStudent, setDraftStudent] = useState('');
@@ -35,9 +40,10 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
   // Groups: one per student (A–Z), then scores without a student.
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const base = onlyStudent === undefined ? rooms : rooms.filter(r => (r.studentTag || '') === onlyStudent);
     const shown = q
-      ? rooms.filter(r => r.scoreName.toLowerCase().includes(q) || r.studentTag.toLowerCase().includes(q))
-      : rooms;
+      ? base.filter(r => r.scoreName.toLowerCase().includes(q) || r.studentTag.toLowerCase().includes(q))
+      : base;
     const map = new Map<string, LibraryRoom[]>();
     for (const r of shown) {
       const k = r.studentTag || '';
@@ -45,7 +51,7 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
       map.get(k)!.push(r);
     }
     return [...map.entries()].sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
-  }, [rooms, query]);
+  }, [rooms, query, onlyStudent]);
 
   function startEdit(r: LibraryRoom) {
     setEditing(r.roomId); setDraftName(r.scoreName); setDraftStudent(r.studentTag); setError('');
@@ -89,6 +95,16 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
         <div className="px-5 pt-4 shrink-0">
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('Search scores or students…')}
             className="w-full u-input rounded-xl px-3.5 py-2.5 text-sm focus:outline-none" />
+          {onlyStudent !== undefined && (
+            <div className="flex items-center gap-2 mt-3">
+              <span className="text-xs" style={{ color: 'var(--t3)' }}>{t('Showing')}</span>
+              <button onClick={() => setOnlyStudent(undefined)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
+                style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>
+                {onlyStudent || t('No student yet')} <span aria-hidden>✕</span>
+              </button>
+            </div>
+          )}
           {error && <p role="alert" className="text-xs mt-2" style={{ color: '#ef4444' }}>{t(error)}</p>}
         </div>
 
@@ -142,6 +158,15 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
                         </p>
                       </div>
                     </button>
+                    {onTogglePin && (
+                      <button type="button" onClick={() => onTogglePin(r.roomId)}
+                        aria-label={pinned.includes(r.roomId) ? t('Unpin') : t('Pin to sidebar')}
+                        title={pinned.includes(r.roomId) ? t('Unpin') : t('Pin to sidebar')}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 hover:bg-black/[0.06] text-base"
+                        style={{ color: pinned.includes(r.roomId) ? '#f59e0b' : 'var(--t3)' }}>
+                        {pinned.includes(r.roomId) ? '★' : '☆'}
+                      </button>
+                    )}
                     <RowMenu items={[
                       { label: t('Open'), onClick: () => onOpen(r.roomId) },
                       { label: t('Rename or set student'), onClick: () => startEdit(r) },

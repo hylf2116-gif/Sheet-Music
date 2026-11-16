@@ -16,7 +16,7 @@ import LayersPopover, { type LayerOwner } from './LayersPopover';
 import NicknameModal from './NicknameModal';
 import RaisedHandsPanel from './RaisedHandsPanel';
 import { upsertSession, fetchRecentSessions, deleteSession, type RecentSession } from '../lib/sessions';
-import { fetchMyRooms, hasHostToken, deleteRoomForEveryone, type LibraryRoom } from '../lib/library';
+import { fetchMyRooms, hasHostToken, deleteRoomForEveryone, loadPinned, savePinned, type LibraryRoom } from '../lib/library';
 import ScoreLibrary from './ScoreLibrary';
 import RowMenu from './RowMenu';
 import ArrangePages from './ArrangePages';
@@ -333,6 +333,19 @@ export default function Home() {
   // My Scores: rooms this person hosts (from this browser's host tokens and their account).
   const [myRooms, setMyRooms] = useState<LibraryRoom[]>([]);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [libraryStudent, setLibraryStudent] = useState<string | undefined>(undefined);
+  function openLibrary(student?: string) { setLibraryStudent(student); setShowLibrary(true); }
+  // Pinned scores for the sidebar (this browser).
+  const [pinned, setPinned] = useState<string[]>([]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load saved pins after mount (localStorage is not available during server render)
+    setPinned(loadPinned());
+  }, []);
+  function togglePin(rid: string) {
+    setPinned(prev => { const next = prev.includes(rid) ? prev.filter(x => x !== rid) : [rid, ...prev]; savePinned(next); return next; });
+  }
+  // Hidden file picker so the sidebar's "New lesson" can start an upload directly.
+  const sidebarUploadRef = useRef<HTMLInputElement>(null);
   // Arrange pages / play order (host tool) and the room's play order for repeats.
   const [arrangeOpen, setArrangeOpen] = useState(false);
   const [playOrder, setPlayOrder] = useState<number[] | null>(null);
@@ -1366,17 +1379,19 @@ export default function Home() {
 
     return (
       <div className="unino-page min-h-screen flex" style={{ backgroundColor: 'var(--app-bg)', color: 'var(--t)' }}>
-        {user && (
+        {(user || myRooms.length > 0) && (
           <Sidebar
             open={sidebarOpen}
             onToggle={() => setSidebarOpen(o => !o)}
-            sessions={recentSessions}
-            onOpenRoom={joinRoom}
-            onShowAllSessions={() => setAccountPanel('sessions')}
             myRooms={myRooms}
-            onShowLibrary={() => setShowLibrary(true)}
+            pinned={pinned}
+            onOpenRoom={joinRoom}
+            onNewSession={() => sidebarUploadRef.current?.click()}
+            onShowLibrary={openLibrary}
+            uploading={loading}
           />
         )}
+        <input ref={sidebarUploadRef} type="file" accept=".pdf" onChange={handleUpload} className="hidden" disabled={loading} />
 
         <div className="relative flex-1 flex flex-col overflow-hidden">
           {/* ambient glow */}
@@ -1491,7 +1506,7 @@ export default function Home() {
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-widest">{t('Recent')}</h3>
-                    <button onClick={() => setShowLibrary(true)} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                    <button onClick={() => openLibrary()} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
                       {t('My Scores')} →
                     </button>
                   </div>
@@ -1556,15 +1571,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Not signed in: My Scores still works from the host links saved in this browser */}
-            {!user && myRooms.length > 0 && (
-              <button onClick={() => setShowLibrary(true)}
-                className="w-full max-w-2xl mb-6 flex items-center justify-between px-5 py-3.5 text-left unino-session-row"
-                style={{ borderRadius: 'var(--r-lg)' }}>
-                <span className="text-sm font-medium u-text">🎼 {t('My Scores')}</span>
-                <span className="text-xs" style={{ color: 'var(--t3)' }}>{t('{n} scores', { n: myRooms.length })} →</span>
-              </button>
-            )}
 
             {/* Action cards — always shown */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-2xl" style={{ maxWidth: 672 }}>
@@ -1667,6 +1673,9 @@ export default function Home() {
             onOpen={rid => { setShowLibrary(false); joinRoom(rid); }}
             onClose={() => setShowLibrary(false)}
             onRoomDeleted={forgetRoom}
+            pinned={pinned}
+            onTogglePin={togglePin}
+            student={libraryStudent}
           />
         )}
 

@@ -72,3 +72,12 @@ export async function deleteRoomForEveryone(roomId: string): Promise<void> {
   if (!res.ok && res.status !== 404) throw new Error((await res.json().catch(() => ({}))).error || 'Could not delete the room.');
   try { localStorage.removeItem(HOST_PREFIX + roomId); } catch {}
 }
+
+// Pinned scores (roomIds) for quick access in the sidebar. Kept in this browser.
+const PIN_KEY = 'unino_pinned';
+export function loadPinned(): string[] {
+  try { const v = JSON.parse(localStorage.getItem(PIN_KEY) || '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : []; } catch { return []; }
+}
+export function savePinned(ids: string[]) {
+  try { localStorage.setItem(PIN_KEY, JSON.stringify(ids)); } catch {}
+}
