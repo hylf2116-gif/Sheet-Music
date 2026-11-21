@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SymbolId } from './symbols';
 import { SymbolShape, makeSymbolAnnotation, isSymbolId } from './SymbolPalette';
 import { useT } from '../lib/i18n';
+import { fontCss, estimateEms, arrowHead, arrowHeadLength, DEFAULT_TEXT_STYLE, type TextStyle } from '../lib/annotationStyle';
 
 interface Props {
   pdfUrl: string;
@@ -53,6 +54,16 @@ interface Props {
   navLabel?: string;
   // Scroll precisely to a measure; nonce changes on every request.
   measureJump?: { page: number; y: number; n: number; nonce: number } | null;
+  // Arrow tool: one head at the end, or heads at both ends
+  arrowStyle?: 'end' | 'both';
+  // Style for new text (bold, italic, font, size)
+  textStyle?: TextStyle;
+  // Templates tool: stamp the chosen template where the page is clicked
+  onStampTemplate?: (page: number, x: number, y: number) => void;
+  // The marks the template would place at (x, y), shown faded under the cursor before clicking
+  templatePreview?: (x: number, y: number) => any[];
+  // Tells the toolbar which mark is selected (so text style buttons can change it)
+  onSelectionChange?: (ann: any | null) => void;
 }
 
 // ── Geometry helpers (pure, outside component) ────────────────────────────
@@ -115,7 +126,7 @@ function annBBox(a: any): BBox {
   }
   if (a.type === 'text') {
     const fs = a.fontSize || 0.03;
-    return { x: a.x, y: a.y - fs, w: Math.max(((a.text || '').length) * fs * 0.6, fs), h: fs * 1.5 };
+    return { x: a.x, y: a.y - fs, w: Math.max(estimateEms(a.text || '', a.bold) * fs, fs), h: fs * 1.3 };
   }
   return { x: 0, y: 0, w: MIN_DIM, h: MIN_DIM };
 }
@@ -243,6 +254,7 @@ export default function PDFViewer({
   measuresByPage, showMeasureNumbers, highlightedMeasure, measureClickMode, onMeasureClick, measureJump,
   activeSymbol, symbolEmForPage, onSymbolPlaced, onSymbolMenu, onExitSymbolTool,
   onEraseStart, onEraseEnd, onUserScroll, onStepPage, navLabel,
+  arrowStyle = 'end', textStyle = DEFAULT_TEXT_STYLE, onStampTemplate, templatePreview, onSelectionChange,
 }: Props) {
   const t = useT();
   // Use stable clientId for ownership checks; fall back to socketId for legacy callers.
@@ -262,6 +274,51 @@ export default function PDFViewer({
   const [currentPoints, setCurrentPoints] = useState<{ x: number; y: number }[]>([]);
   const [preview, setPreview] = useState<any>(null);
   const [selected, setSelected] = useState<string | null>(null);
+
+  // Tell the toolbar what is selected (text style buttons then restyle that text).
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  onSelectionChangeRef.current = onSelectionChange;
+  const selectedAnn = selected ? annotations.find(a => a.id === selected) ?? null : null;
+  useEffect(() => { onSelectionChangeRef.current?.(selectedAnn); }, [selectedAnn]);
+
+  // ── Inline text editor (new text, or double-click a text to change it) ──
+  // New text uses the toolbar's text style; an existing text shows its own (live) style.
+  const [textEdit, setTextEdit] = useState<{
+    page: number; x: number; y: number; value: string; id?: string; pageH: number;
+  } | null>(null);
+  function openTextEditor(o: { page: number; x: number; y: number; value: string; id?: string }) {
+    const pageH = svgRefs.current[o.page]?.getBoundingClientRect().height ?? 1000;
+    setTextEdit({ ...o, pageH });
+  }
+  function editorStyle(): { style: TextStyle; color: string } {
+    const live = textEdit?.id ? annotations.find(a => a.id === textEdit.id) : null;
+    if (!live) return { style: textStyle, color };
+    return { style: { bold: !!live.bold, italic: !!live.italic, font: live.font || 'sans', fontSize: live.fontSize || 0.03 }, color: live.color };
+  }
+  function commitTextEdit() {
+    const te = textEdit;
+    setTextEdit(null);
+    if (!te) return;
+    const text = te.value.trim();
+    if (te.id) {
+      const prev = annotations.find(a => a.id === te.id);
+      if (!prev) return;
+      if (!text) { onAnnotationDelete(te.id); return; }
+      if (text !== prev.text) onAnnotationUpdate(te.id, { text }, true, prev);
+      return;
+    }
+    if (!text) return;
+    onAnnotationAdd({
+      id: crypto.randomUUID(), type: 'text', page: te.page, x: te.x, y: te.y, text, color,
+      fontSize: textStyle.fontSize, ...(textStyle.bold ? { bold: true } : {}), ...(textStyle.italic ? { italic: true } : {}),
+      ...(textStyle.font !== 'sans' ? { font: textStyle.font } : {}),
+    });
+  }
+  // Leaving the text tool finishes the text being typed.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- finishing the edit is a reaction to the tool change
+    if (activeTool !== 'text' && activeTool !== 'select' && textEdit) commitTextEdit();
+  }, [activeTool]); // eslint-disable-line react-hooks/exhaustive-deps
   const [eraserCursor, setEraserCursor] = useState<{ x: number; y: number; page: number } | null>(null);
   // Symbols tool: ghost preview position (also where 0–4 keys stamp fingerings).
   const [symbolCursor, setSymbolCursor] = useState<{ x: number; y: number; page: number } | null>(null);
@@ -913,8 +970,14 @@ export default function PDFViewer({
     if (activeTool === 'text') {
       const pos = getPagePos(e, pageIndex);
       if (!pos) return;
-      const text = window.prompt(t('Enter text:'));
-      if (text) onAnnotationAdd({ id: crypto.randomUUID(), type: 'text', page: pageIndex, x: pos.x, y: pos.y, text, color, fontSize: 0.03 });
+      e.preventDefault(); // keep focus on the text box that opens
+      if (textEdit) { commitTextEdit(); return; }
+      openTextEditor({ page: pageIndex, x: pos.x, y: pos.y, value: '' });
+      return;
+    }
+    if (activeTool === 'template') {
+      const pos = getPagePos(e, pageIndex);
+      if (pos) onStampTemplate?.(pageIndex, pos.x, pos.y);
       return;
     }
     const pos = getPagePos(e, pageIndex);
@@ -930,7 +993,7 @@ export default function PDFViewer({
       cancelLongPress();
     }
     if (handlePanMove(e)) return;
-    if (activeTool === 'symbol') {
+    if (activeTool === 'symbol' || activeTool === 'template') {
       const pos = getPagePos(e, pageIndex);
       setSymbolCursor(pos ? { x: pos.x, y: pos.y, page: pageIndex } : null);
       return;
@@ -1018,8 +1081,11 @@ export default function PDFViewer({
     if (!pos) return;
     if (activeTool === 'ellipse') {
       setPreview({ type: 'ellipse', page: pageIndex, cx: (start.x + pos.x) / 2, cy: (start.y + pos.y) / 2, rx: Math.abs(pos.x - start.x) / 2, ry: Math.abs(pos.y - start.y) / 2, color, strokeWidth });
-    } else if (activeTool === 'line') {
-      setPreview({ type: 'line', page: pageIndex, x1: start.x, y1: start.y, x2: pos.x, y2: pos.y, color, strokeWidth });
+    } else if (activeTool === 'line' || activeTool === 'arrow') {
+      setPreview({
+        type: 'line', page: pageIndex, x1: start.x, y1: start.y, x2: pos.x, y2: pos.y, color, strokeWidth,
+        ...(activeTool === 'arrow' ? { arrowEnd: true, ...(arrowStyle === 'both' ? { arrowStart: true } : {}) } : {}),
+      });
     }
   }
 
@@ -1069,7 +1135,7 @@ export default function PDFViewer({
     if (ann && canDelete(ann) && !hidden.has(ann.ownerId)) setSelected(id);
   }
 
-  function renderAnnotation(s: any, _pageWidth: number) {
+  function renderAnnotation(s: any, meta: { width: number; height: number }) {
     const isSelected = selected === s.id;
     const glow = isSelected ? { filter: 'drop-shadow(0 0 4px #60a5fa)' } : {};
     const stroke = { strokeWidth: s.strokeWidth || 2, vectorEffect: 'non-scaling-stroke' as const };
@@ -1082,7 +1148,25 @@ export default function PDFViewer({
     }
     if (s.type === 'line') {
       if (!isGoodNum(s.x1) || !isGoodNum(s.y1) || !isGoodNum(s.x2) || !isGoodNum(s.y2)) return null;
-      return <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={s.color} {...stroke} strokeLinecap="round" style={glow} onClick={() => onShapeClick(s.id)} />;
+      if (!s.arrowEnd && !s.arrowStart) {
+        return <line key={s.id} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={s.color} {...stroke} strokeLinecap="round" style={glow} onClick={() => onShapeClick(s.id)} />;
+      }
+      // Arrow: heads are built in page pixels so they keep their shape on any page size.
+      const W = meta.width, H = meta.height, L = arrowHeadLength(s.strokeWidth || 2);
+      const a = [s.x1 * W, s.y1 * H], b = [s.x2 * W, s.y2 * H];
+      const end = s.arrowEnd ? arrowHead(a[0], a[1], b[0], b[1], L) : null;
+      const startH = s.arrowStart ? arrowHead(b[0], b[1], a[0], a[1], L) : null;
+      const p1 = startH ? startH.shaftEnd : a, p2 = end ? end.shaftEnd : b;
+      const poly = (h: { points: [number, number][] }) => h.points.map(([x, y]) => `${x / W},${y / H}`).join(' ');
+      return (
+        <g key={s.id} style={glow} onClick={() => onShapeClick(s.id)}>
+          <line x1={p1[0] / W} y1={p1[1] / H} x2={p2[0] / W} y2={p2[1] / H} stroke={s.color} {...stroke} strokeLinecap="round" />
+          {/* wide invisible line so the thin arrow is easy to click */}
+          <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="transparent" strokeWidth={12} vectorEffect="non-scaling-stroke" />
+          {end && <polygon points={poly(end)} fill={s.color} stroke={s.color} strokeWidth={1} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />}
+          {startH && <polygon points={poly(startH)} fill={s.color} stroke={s.color} strokeWidth={1} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />}
+        </g>
+      );
     }
     if (s.type === 'highlight') {
       if (!isGoodNum(s.w) || !isGoodNum(s.h) || s.w <= 0 || s.h <= 0) return null;
@@ -1101,7 +1185,22 @@ export default function PDFViewer({
         strokeOpacity={hl.strokeOpacity} strokeLinecap="round" strokeLinejoin="round"
         style={{ ...glow, mixBlendMode: hl.mixBlendMode }} onClick={() => onShapeClick(s.id)} />;
     }
-    if (s.type === 'text') return <text key={s.id} x={s.x} y={s.y} fill={s.color} fontSize={s.fontSize || 0.03} style={glow} onClick={() => onShapeClick(s.id)}>{s.text}</text>;
+    if (s.type === 'text') {
+      if (textEdit?.id === s.id) return null; // being edited in the text box
+      return (
+        <text key={s.id} x={s.x} y={s.y} fill={s.color} fontSize={s.fontSize || 0.03}
+          fontWeight={s.bold ? 700 : 400} fontStyle={s.italic ? 'italic' : 'normal'} fontFamily={fontCss(s.font)}
+          style={glow} onClick={() => onShapeClick(s.id)}
+          onDoubleClick={() => {
+            if (activeTool !== 'select' && activeTool !== 'text') return;
+            if (!canDelete(s) || hidden.has(s.ownerId)) return;
+            setSelected(s.id); // stays selected, so the toolbar's text style buttons change it
+            openTextEditor({ page: s.page, x: s.x, y: s.y, value: s.text || '', id: s.id });
+          }}>
+          {s.text}
+        </text>
+      );
+    }
     return null;
   }
 
@@ -1113,10 +1212,10 @@ export default function PDFViewer({
     () => pageMetas.map((meta, i) =>
       annotations
         .filter(a => a.page === i && a.id !== draggedId && !hidden.has(a.ownerId))
-        .map(a => renderAnnotation(a, meta.width)),
+        .map(a => renderAnnotation(a, meta)),
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pageMetas, annotations, selected, activeTool, eraserMode, isHost, myId, draggedId, hidden],
+    [pageMetas, annotations, selected, activeTool, eraserMode, isHost, myId, draggedId, hidden, textEdit?.id],
   );
 
   // ── Render ────────────────────────────────────────────────────────────
@@ -1227,11 +1326,11 @@ export default function PDFViewer({
                   const base = annotations.find(a => a.id === dragChanges.id && a.page === pageIndex);
                   if (!base || hidden.has(base.ownerId)) return null;
                   const eff = { ...base, ...dragChanges.changes };
-                  return renderAnnotation(eff, meta.width);
+                  return renderAnnotation(eff, meta);
                 })()}
 
                 {/* In-progress shape preview */}
-                {preview && preview.page === pageIndex && renderAnnotation({ ...preview, id: 'preview' }, meta.width)}
+                {preview && preview.page === pageIndex && renderAnnotation({ ...preview, id: 'preview' }, meta)}
 
                 {/* Selection overlay — only shown for select tool with a valid bbox */}
                 {activeTool === 'select' && selAnn && validBbox && bbox && (
@@ -1331,6 +1430,14 @@ export default function PDFViewer({
                     opacity={0.4} style={{ pointerEvents: 'none' }} />;
                 })()}
 
+                {/* Templates tool: the marks it will place, faded, following the cursor */}
+                {activeTool === 'template' && templatePreview && symbolCursor?.page === pageIndex && (
+                  <g opacity={0.45} style={{ pointerEvents: 'none' }}>
+                    {templatePreview(symbolCursor.x, symbolCursor.y).map((m, i) =>
+                      renderAnnotation({ ...m, id: `tpl-preview-${i}`, page: pageIndex }, meta))}
+                  </g>
+                )}
+
                 {/* Laser pointers */}
                 {[
                   ...remoteLasers.filter(l => l.page === pageIndex),
@@ -1358,6 +1465,34 @@ export default function PDFViewer({
                   {m.n}
                 </div>
               ))}
+
+              {/* Inline text editor */}
+              {textEdit && textEdit.page === pageIndex && (() => { const es = editorStyle(); return (
+                <input
+                  autoFocus
+                  value={textEdit.value}
+                  onChange={e => setTextEdit(te => te && { ...te, value: e.target.value })}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitTextEdit(); }
+                    else if (e.key === 'Escape') { e.preventDefault(); setTextEdit(null); }
+                    e.stopPropagation();
+                  }}
+                  onBlur={commitTextEdit}
+                  placeholder={t('Type, then Enter')}
+                  aria-label={t('Text')}
+                  style={{
+                    position: 'absolute', zIndex: 30,
+                    left: `${textEdit.x * 100}%`, top: `${textEdit.y * 100}%`,
+                    transform: 'translateY(-82%)',
+                    minWidth: 120, width: `${Math.max(6, textEdit.value.length + 2)}ch`, maxWidth: '90%',
+                    fontSize: es.style.fontSize * textEdit.pageH, lineHeight: 1.15, padding: '0 4px',
+                    fontWeight: es.style.bold ? 700 : 400, fontStyle: es.style.italic ? 'italic' : 'normal',
+                    fontFamily: fontCss(es.style.font), color: es.color,
+                    background: 'rgba(255,255,255,0.9)', border: '1.5px solid #6366f1', borderRadius: 6, outline: 'none',
+                    boxShadow: '0 4px 14px rgba(99,102,241,0.25)',
+                  }}
+                />
+              ); })()}
 
               {/* Delete button */}
               {(() => {

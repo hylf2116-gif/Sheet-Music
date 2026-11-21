@@ -36,6 +36,7 @@ import { usePhone, useNarrow } from './useMediaQuery';
 import OMRPanel, { type OmrState, type OmrPrefs, type OmrMeasure, DEFAULT_OMR_PREFS } from './OMRPanel';
 import { useT, type TFunc } from '../lib/i18n';
 import { LogoMark } from './Logo';
+import { TEMPLATES, DEFAULT_TEXT_STYLE, type TextStyle } from '../lib/annotationStyle';
 
 const OMR_PREFS_KEY = 'unino_omr_prefs';
 
@@ -235,6 +236,12 @@ export default function Home() {
   const [activeTool, setActiveTool] = useState('pen');
   const [eraserMode, setEraserMode] = useState<'stroke' | 'pixel'>('stroke');
   const [color, setColor] = useState('#ff3b30');
+  // Arrow heads, text style and the chosen template (tools added after the basic ones)
+  const [arrowStyle, setArrowStyle] = useState<'end' | 'both'>('end');
+  const [textStyle, setTextStyle] = useState<TextStyle>(DEFAULT_TEXT_STYLE);
+  const [activeTemplate, setActiveTemplate] = useState(TEMPLATES[0].id);
+  // The mark selected in the viewer (text style and color buttons restyle a selected text)
+  const [selectedAnn, setSelectedAnn] = useState<any | null>(null);
   const [strokeWidth, setStrokeWidth] = useState(4);
   // Highlighter has its own color, width and opacity (remembered per browser).
   const [hl, setHl] = useState({ color: '#ffcc00', width: 18, opacity: 0.4 });
@@ -1256,13 +1263,65 @@ export default function Home() {
     return {};
   }
 
+  // What an update changed, as it was before (so undo can put text, style and color back).
+  const STYLE_DEFAULTS: Record<string, unknown> = { bold: false, italic: false, font: 'sans', text: '' };
+  function beforeValues(prev: any, changes: any) {
+    const out: Record<string, unknown> = { ...extractGeometry(prev) };
+    for (const k of Object.keys(changes)) out[k] = prev[k] ?? STYLE_DEFAULTS[k] ?? prev[k];
+    return out;
+  }
+
   function handleAnnotationUpdate(id: string, changes: any, final: boolean, prevAnnotation?: any) {
     socket.emit('update-shape', { roomId, id, changes });
     if (final) {
       setAnnotations(prev => prev.map(a => a.id === id ? { ...a, ...changes } : a));
       if (prevAnnotation) {
-        recordHistory({ kind: 'update', id, before: extractGeometry(prevAnnotation), after: changes });
+        recordHistory({ kind: 'update', id, before: beforeValues(prevAnnotation, changes), after: changes });
       }
+    }
+  }
+
+  // Templates: stamp all marks of the chosen template at once, as one undo step.
+  // The marks of the chosen template at (x, y), kept on the page. Used for the faded preview and for placing.
+  function templateMarks(x: number, y: number) {
+    const tp = TEMPLATES.find(tt => tt.id === activeTemplate) ?? TEMPLATES[0];
+    return tp.build(x, y, myPersonColor ?? color, s => t(s)).map(m => {
+      const clamped: Record<string, unknown> = { ...m };
+      for (const k of ['x', 'y', 'cx', 'cy', 'x1', 'y1', 'x2', 'y2']) {
+        if (typeof clamped[k] === 'number') clamped[k] = Math.max(0.005, Math.min(0.97, clamped[k] as number));
+      }
+      return clamped;
+    });
+  }
+  function stampTemplate(page: number, x: number, y: number) {
+    beginHistoryBatch();
+    for (const m of templateMarks(x, y)) handleAnnotationAdd({ ...m, id: crypto.randomUUID(), page });
+    endHistoryBatch();
+  }
+
+  // Text style buttons: set the style for new text, and restyle a selected text I may edit.
+  function changeTextStyle(s: TextStyle) {
+    setTextStyle(s);
+    const a = selectedAnn;
+    if (!a || a.type !== 'text' || !(isHost || a.ownerId === myClientId)) return;
+    const changes: Record<string, unknown> = {};
+    if (!!a.bold !== s.bold) changes.bold = s.bold;
+    if (!!a.italic !== s.italic) changes.italic = s.italic;
+    if ((a.font || 'sans') !== s.font) changes.font = s.font;
+    if (Math.abs((a.fontSize || 0.03) - s.fontSize) > 1e-6) changes.fontSize = s.fontSize;
+    if (Object.keys(changes).length) handleAnnotationUpdate(a.id, changes, true, a);
+  }
+  function changeColor(c: string) {
+    setColor(c);
+    const a = selectedAnn;
+    if (!a || myPersonColor || !(isHost || a.ownerId === myClientId)) return;
+    if ((a.type === 'text' || a.type === 'line') && a.color !== c) handleAnnotationUpdate(a.id, { color: c }, true, a);
+  }
+  // Selecting a text shows its style on the toolbar.
+  function handleSelectionChange(a: any | null) {
+    setSelectedAnn(a);
+    if (a?.type === 'text') {
+      setTextStyle({ bold: !!a.bold, italic: !!a.italic, font: a.font || 'sans', fontSize: a.fontSize || 0.03 });
     }
   }
 
@@ -1758,7 +1817,14 @@ export default function Home() {
     setEraserMode,
     // Color/width controls edit the highlighter's own settings while it is the active tool.
     color: isHighlighter ? hl.color : color,
-    setColor: (c: string) => (isHighlighter ? updateHl({ color: c }) : setColor(c)),
+    setColor: (c: string) => (isHighlighter ? updateHl({ color: c }) : changeColor(c)),
+    arrowStyle,
+    setArrowStyle,
+    textStyle,
+    setTextStyle: changeTextStyle,
+    activeTemplate,
+    onPickTemplate: setActiveTemplate,
+    selectedKind: selectedAnn && (isHost || selectedAnn.ownerId === myClientId) ? selectedAnn.type : null,
     strokeWidth: isHighlighter ? hl.width : strokeWidth,
     setStrokeWidth: (w: number) => (isHighlighter ? updateHl({ width: w }) : setStrokeWidth(w)),
     highlighterOpacity: hl.opacity,
@@ -1829,6 +1895,11 @@ export default function Home() {
               color={myPersonColor ?? (isHighlighter ? hl.color : color)}
               strokeWidth={isHighlighter ? hl.width : strokeWidth}
               highlighterOpacity={hl.opacity}
+              arrowStyle={arrowStyle}
+              textStyle={textStyle}
+              onStampTemplate={stampTemplate}
+              templatePreview={templateMarks}
+              onSelectionChange={handleSelectionChange}
               isHost={isHost}
               mySocketId={mySocketId}
               myClientId={myClientId}

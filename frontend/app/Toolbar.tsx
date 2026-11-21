@@ -7,6 +7,8 @@ import SymbolPopover, { SymbolIcon, type SymbolSize } from './SymbolPalette';
 import { useT } from '../lib/i18n';
 import { PERSON_PALETTE } from './ColorModePicker';
 import { LogoMark } from './Logo';
+import { createPortal } from 'react-dom';
+import { FONTS, TEXT_SIZES, TEMPLATES, type TextStyle } from '../lib/annotationStyle';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -69,6 +71,17 @@ export interface ToolbarProps {
   personColor?: string;
   canPickPersonColor?: boolean;
   onPickPersonColor?: (c: string) => void;
+  // Arrow tool: one head or two
+  arrowStyle: 'end' | 'both';
+  setArrowStyle: (s: 'end' | 'both') => void;
+  // Text tool (also restyles a selected text)
+  textStyle: TextStyle;
+  setTextStyle: (s: TextStyle) => void;
+  // Templates tool
+  activeTemplate: string;
+  onPickTemplate: (id: string) => void;
+  // Type of the mark selected with the Select tool (a selected text shows color + text style)
+  selectedKind?: string | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -90,13 +103,15 @@ const ANNOTATE_TOOLS = [
   { id: 'highlight', label: 'Highlighter' },
   { id: 'ellipse',   label: 'Ellipse'   },
   { id: 'line',      label: 'Line'      },
+  { id: 'arrow',     label: 'Arrow'     },
   { id: 'text',      label: 'Text'      },
   { id: 'symbol',    label: 'Symbols'   },
+  { id: 'template',  label: 'Templates' },
   { id: 'eraser',    label: 'Eraser'    },
   { id: 'select',    label: 'Select'    },
   { id: 'laser',     label: 'Laser'     },
 ];
-const DRAW_TOOLS = new Set(['pen', 'highlight', 'ellipse', 'line', 'text', 'symbol']);
+const DRAW_TOOLS = new Set(['pen', 'highlight', 'ellipse', 'line', 'arrow', 'text', 'symbol', 'template']);
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +120,8 @@ const ICONS: Record<string, React.ReactNode> = {
   ellipse:   <ellipse cx="12" cy="12" rx="10" ry="6" />,
   pen:       (<><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></>),
   line:      <path d="M5 19 19 5" />,
+  arrow:     (<><path d="M5 19 19 5" /><path d="M10 5h9v9" /></>),
+  template:  (<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9h6" /><path d="M7 13h10" /><path d="M15 7.5l1 1.8 2 .3-1.5 1.4.4 2-1.9-1-1.9 1 .4-2L12 9.6l2-.3z" fill="currentColor" stroke="none" /></>),
   highlight: (<><path d="M9 11l-6 6v3h9l3-3" /><path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" /></>),
   eraser:    (<><path d="m7 21-4.3-4.3a2 2 0 0 1 0-2.8l9.6-9.6a2 2 0 0 1 2.8 0l5.6 5.6a2 2 0 0 1 0 2.8L13 21" /><path d="M22 21H7" /></>),
   symbol:    (<><path d="M4 18c3-9 13-9 16 0" /><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none" /></>),
@@ -149,12 +166,18 @@ export default function Toolbar(p: ToolbarProps) {
   // Full symbol palette opened from the "All" button (screen position of the popover).
   const [symbolPaletteAt, setSymbolPaletteAt] = useState<{ left: number; top: number } | null>(null);
   const allSymbolsBtnRef = useRef<HTMLButtonElement>(null);
+  const fontBtnRef = useRef<HTMLButtonElement>(null);
+  const [fontMenuOpen, setFontMenuOpen] = useState(false);
+  const tplBtnRef = useRef<HTMLButtonElement>(null);
+  const [tplMenuOpen, setTplMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     annotate: false, navigate: false, room: false, tools: false,
   });
 
   const isAnnotate = ANNOTATE_TOOLS.some(t => t.id === p.activeTool);
-  const isDraw     = DRAW_TOOLS.has(p.activeTool);
+  // A text selected with the Select tool gets the same color + style row as the Text tool.
+  const styleSelected = p.activeTool === 'select' && p.selectedKind === 'text';
+  const isDraw     = DRAW_TOOLS.has(p.activeTool) || styleSelected;
   const isCustom   = !PRESET_COLORS.includes(p.color);
 
   function toggle(k: string) { setCollapsed(prev => ({ ...prev, [k]: !prev[k] })); }
@@ -222,7 +245,7 @@ export default function Toolbar(p: ToolbarProps) {
     return (
       <div className={`flex ${p.compact ? 'gap-2.5' : 'gap-1.5'} ${p.pos === 'top' ? 'shrink-0' : 'flex-wrap px-2 pt-1'}`}>
         {PRESET_COLORS.map(c => (
-          <button key={c} onClick={() => p.setColor(c)}
+          <button key={c} onClick={() => p.setColor(c)} onMouseDown={keepFocus}
             className="rounded-full transition-transform hover:scale-110 shrink-0"
             style={{ width: dotSize, height: dotSize }}>
             <span className="block w-full h-full rounded-full" style={{
@@ -239,6 +262,127 @@ export default function Toolbar(p: ToolbarProps) {
           }} />
           <input type="color" value={p.color} onChange={e => p.setColor(e.target.value)} className="absolute inset-0 opacity-0 w-0 h-0" />
         </label>
+      </div>
+    );
+  }
+
+  // Toolbar buttons used while typing must not take focus away from the text box.
+  function keepFocus(e: React.MouseEvent) { e.preventDefault(); }
+
+  // Arrow: one head (→) or both (↔)
+  function ArrowRow() {
+    return (
+      <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'px-2 pb-1' : 'shrink-0'}`}>
+        {(['end', 'both'] as const).map(s => (
+          <button key={s} onClick={() => p.setArrowStyle(s)} title={s === 'end' ? t('Single arrow') : t('Double arrow')}
+            aria-label={s === 'end' ? t('Single arrow') : t('Double arrow')}
+            className={`rounded-lg flex items-center justify-center transition-colors shrink-0 ${p.compact ? 'w-10 h-10' : 'w-8 h-7'} ${
+              p.arrowStyle === s ? 'bg-black/[0.08] text-gray-900' : 'text-gray-500 hover:bg-black/[0.04]'}`}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 12h16" /><path d="M15 7l5 5-5 5" />{s === 'both' && <path d="M9 7l-5 5 5 5" />}
+            </svg>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  // Text: bold, italic, size and font. Applies to new text and to a selected text.
+  function TextStyleRow() {
+    const s = p.textStyle;
+    const set = (patch: Partial<TextStyle>) => p.setTextStyle({ ...s, ...patch });
+    const btn = (on: boolean) => `rounded-lg flex items-center justify-center transition-colors shrink-0 ${p.compact ? 'w-10 h-10' : 'w-7 h-7'} ${
+      on ? 'bg-black/[0.08] text-gray-900' : 'text-gray-500 hover:bg-black/[0.04]'}`;
+    const font = FONTS.find(f => f.id === s.font) ?? FONTS[0];
+    return (
+      <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'flex-wrap px-2 pb-1.5' : 'shrink-0'}`}>
+        <button onMouseDown={keepFocus} onClick={() => set({ bold: !s.bold })} title={t('Bold')} aria-label={t('Bold')} aria-pressed={s.bold}
+          className={btn(s.bold)}><span className="text-sm font-bold">B</span></button>
+        <button onMouseDown={keepFocus} onClick={() => set({ italic: !s.italic })} title={t('Italic')} aria-label={t('Italic')} aria-pressed={s.italic}
+          className={btn(s.italic)}><span className="text-sm italic" style={{ fontFamily: 'Georgia, serif' }}>I</span></button>
+        <span className={p.pos === 'top' ? 'w-px h-5 bg-black/[0.08] mx-1' : 'w-1'} />
+        {TEXT_SIZES.map(z => (
+          <button key={z.id} onMouseDown={keepFocus} onClick={() => set({ fontSize: z.size })} title={t('Size {s}', { s: z.id })}
+            className={`${btn(Math.abs(s.fontSize - z.size) < 1e-6)} text-xs font-semibold`}>{z.id}</button>
+        ))}
+        <span className={p.pos === 'top' ? 'w-px h-5 bg-black/[0.08] mx-1' : 'w-1'} />
+        <div className="relative shrink-0">
+          <button ref={fontBtnRef} onMouseDown={keepFocus} onClick={() => setFontMenuOpen(o => !o)} title={t('Font')} aria-label={t('Font')}
+            className={`h-7 px-2 rounded-lg text-xs text-gray-700 hover:bg-black/[0.05] flex items-center gap-1 whitespace-nowrap ${p.compact ? 'h-10' : ''}`}
+            style={{ fontFamily: font.css }}>
+            {t(font.label)} <Icon name="chevronD" size={11} />
+          </button>
+          {fontMenuOpen && typeof document !== 'undefined' && createPortal((() => {
+            const r = fontBtnRef.current?.getBoundingClientRect();
+            const left = Math.min(r ? r.left : 100, window.innerWidth - 220);
+            const top = r && r.bottom + 330 > window.innerHeight ? Math.max(8, r.top - 330) : (r ? r.bottom + 6 : 60);
+            return (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 59 }} onMouseDown={keepFocus} onClick={() => setFontMenuOpen(false)} />
+                <div role="menu" style={{ position: 'fixed', left, top, zIndex: 60, width: 210, background: 'white', borderRadius: 14,
+                  border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 12px 32px rgba(0,0,0,0.16)', padding: 6 }}>
+                  {FONTS.map(f => (
+                    <button key={f.id} role="menuitem" onMouseDown={keepFocus}
+                      onClick={() => { set({ font: f.id }); setFontMenuOpen(false); }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-[15px] hover:bg-black/[0.05] flex items-center justify-between ${
+                        f.id === s.font ? 'text-indigo-600' : 'text-gray-800'}`}
+                      style={{ fontFamily: f.css }}>
+                      <span>{t(f.label)}</span><span className="text-xs text-gray-400">Aa 中</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            );
+          })(), document.body)}
+        </div>
+      </div>
+    );
+  }
+
+  // Templates: ready-made teaching marks. Pick one, then click the score to place it.
+  function TemplateRow() {
+    // Top bar: one button with the chosen template that opens the full list (12 don't fit in a row).
+    if (p.pos === 'top') {
+      const cur = TEMPLATES.find(tp => tp.id === p.activeTemplate) ?? TEMPLATES[0];
+      return (
+        <div className="relative shrink-0">
+          <button ref={tplBtnRef} onClick={() => setTplMenuOpen(o => !o)} title={t('Templates')}
+            className={`h-7 px-2.5 rounded-lg text-xs whitespace-nowrap flex items-center gap-1.5 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300 ${p.compact ? 'h-10' : ''}`}>
+            <span className="font-semibold opacity-70">{cur.icon}</span>{t(cur.label)}<Icon name="chevronD" size={11} />
+          </button>
+          {tplMenuOpen && typeof document !== 'undefined' && createPortal((() => {
+            const r = tplBtnRef.current?.getBoundingClientRect();
+            const left = Math.min(r ? r.left : 100, window.innerWidth - 250);
+            return (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 59 }} onClick={() => setTplMenuOpen(false)} />
+                <div role="menu" style={{ position: 'fixed', left, top: r ? r.bottom + 6 : 60, zIndex: 60, width: 240,
+                  maxHeight: '70vh', overflowY: 'auto', background: 'white', borderRadius: 14,
+                  border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 12px 32px rgba(0,0,0,0.16)', padding: 6 }}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-3 pt-1 pb-1.5">{t('Pick one, then tap the score')}</p>
+                  {TEMPLATES.map(tp => (
+                    <button key={tp.id} role="menuitem" onClick={() => { p.onPickTemplate(tp.id); setTplMenuOpen(false); }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-[13px] hover:bg-black/[0.05] flex items-center gap-2.5 ${
+                        tp.id === p.activeTemplate ? 'text-indigo-600 bg-indigo-50' : 'text-gray-800'}`}>
+                      <span className="w-12 text-center text-xs font-semibold opacity-60 shrink-0">{tp.icon}</span>{t(tp.label)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            );
+          })(), document.body)}
+        </div>
+      );
+    }
+    return (
+      <div className={`flex items-center gap-1 flex-wrap px-2 pb-1.5`}>
+        {TEMPLATES.map(tp => (
+          <button key={tp.id} onClick={() => p.onPickTemplate(tp.id)} title={t(tp.label)}
+            className={`h-7 px-2 rounded-lg text-xs whitespace-nowrap flex items-center gap-1.5 transition-colors shrink-0 ${p.compact ? 'h-10' : ''} ${
+              p.activeTemplate === tp.id ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300' : 'text-gray-600 hover:bg-black/[0.05]'}`}>
+            <span className="font-semibold opacity-70">{tp.icon}</span>{t(tp.label)}
+          </button>
+        ))}
       </div>
     );
   }
@@ -347,14 +491,18 @@ export default function Toolbar(p: ToolbarProps) {
           </div>
         );
     }
+    // Second row per tool: text style, arrow heads, or the template list instead of stroke sizes.
+    const extra = (p.activeTool === 'text' || styleSelected) ? <TextStyleRow />
+      : p.activeTool === 'template' ? <TemplateRow />
+      : p.activeTool === 'arrow' ? (<><StrokeRow />{p.pos === 'top' ? <Divider /> : null}<ArrowRow /></>)
+      : (<><StrokeRow />{p.activeTool === 'highlight' && (p.pos === 'top' ? <><Divider /><OpacityRow /></> : <OpacityRow />)}</>);
     if (p.pos === 'top') {
       return (
         <>
           <Divider />
           <ColorRow />
           <Divider />
-          <StrokeRow />
-          {p.activeTool === 'highlight' && (<><Divider /><OpacityRow /></>)}
+          {extra}
         </>
       );
     }
@@ -362,8 +510,7 @@ export default function Toolbar(p: ToolbarProps) {
       <div className="mx-2 mb-2 rounded-xl overflow-hidden" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.05)' }}>
         <ColorRow />
         <div className="mx-2 h-px bg-black/[0.05] my-1" />
-        <StrokeRow />
-        {p.activeTool === 'highlight' && <OpacityRow />}
+        {extra}
       </div>
     );
   }
