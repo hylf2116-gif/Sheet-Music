@@ -1,5 +1,6 @@
 import { PDFDocument, rgb, LineCapStyle } from 'pdf-lib';
 import { SYMBOL_DEFS, type SymbolId } from './symbols';
+import { canvasFont, fontCss, arrowHead, arrowHeadLength } from '../lib/annotationStyle';
 
 // Transform every x,y pair of an SVG path that uses only absolute M/L/C/Q/Z commands
 // (true for all symbol paths in symbols.ts).
@@ -20,13 +21,14 @@ function mapPathPoints(d: string, f: (x: number, y: number) => [number, number])
 
 // Render one line of text to a PNG. Sizes come back in ems so the caller can scale them.
 const TEXT_EM = 96; // pixels per em: sharp enough for printing
-async function textImage(text: string, color: string) {
+async function textImage(text: string, color: string, style: { bold?: boolean; italic?: boolean; font?: string } = {}) {
   if (typeof document === 'undefined') return null;
-  const family = getComputedStyle(document.body).fontFamily || 'sans-serif';
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  const font = `${TEXT_EM}px ${family}`;
+  // Same font as the score viewer draws (fonts must be loaded before measuring).
+  const font = canvasFont(style, TEXT_EM);
+  try { await document.fonts?.load(font, text); } catch {}
   ctx.font = font;
   const m = ctx.measureText(text);
   const ascent = m.fontBoundingBoxAscent ?? TEXT_EM * 0.9;
@@ -48,7 +50,7 @@ async function textImage(text: string, color: string) {
 }
 
 // Text width (as a fraction of page width) in an SVG set up like the score viewer.
-function screenTextWidth(text: string, fs: number, pw: number, ph: number): number | null {
+function screenTextWidth(text: string, fs: number, pw: number, ph: number, style: { bold?: boolean; italic?: boolean; font?: string } = {}): number | null {
   if (typeof document === 'undefined') return null;
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
@@ -60,6 +62,9 @@ function screenTextWidth(text: string, fs: number, pw: number, ph: number): numb
   svg.style.cssText = 'position:absolute;left:-10000px;top:0;visibility:hidden';
   const t = document.createElementNS(ns, 'text');
   t.setAttribute('font-size', String(fs));
+  t.setAttribute('font-family', fontCss(style.font));
+  if (style.bold) t.setAttribute('font-weight', '700');
+  if (style.italic) t.setAttribute('font-style', 'italic');
   t.textContent = text;
   svg.appendChild(t);
   document.body.appendChild(svg);
@@ -170,11 +175,22 @@ export async function buildAnnotatedPDF(pdfUrl: string, annotations: any[]): Pro
         page.drawEllipse({ x: cx, y: cy, xScale: rx, yScale: ry, borderColor: color, borderWidth: sw });
 
       } else if (ann.type === 'line') {
+        // Work in top-down page points (like the screen), flip y when drawing.
+        const a: [number, number] = [ann.x1 * pw, ann.y1 * ph], b: [number, number] = [ann.x2 * pw, ann.y2 * ph];
+        const L = arrowHeadLength(sw);
+        const endH = ann.arrowEnd ? arrowHead(a[0], a[1], b[0], b[1], L) : null;
+        const startH = ann.arrowStart ? arrowHead(b[0], b[1], a[0], a[1], L) : null;
+        const p1 = startH ? startH.shaftEnd : a, p2 = endH ? endH.shaftEnd : b;
         page.drawLine({
-          start: { x: ann.x1 * pw, y: ph - ann.y1 * ph },
-          end:   { x: ann.x2 * pw, y: ph - ann.y2 * ph },
+          start: { x: p1[0], y: ph - p1[1] },
+          end:   { x: p2[0], y: ph - p2[1] },
           color, thickness: sw, lineCap: LineCapStyle.Round,
         });
+        for (const h of [endH, startH]) {
+          if (!h) continue;
+          const d = 'M ' + h.points.map(([x, y]) => `${x} ${y}`).join(' L ') + ' Z';
+          page.drawSvgPath(d, { x: 0, y: ph, scale: 1, color, borderColor: color, borderWidth: 1 });
+        }
 
       } else if (ann.type === 'highlight') {
         page.drawRectangle({
@@ -216,12 +232,12 @@ export async function buildAnnotatedPDF(pdfUrl: string, annotations: any[]): Pro
         // 0–1 box stretched to the page: its baseline is at y, its height is fontSize × page height
         // and its width is scaled by the page width.
         const fs = ann.fontSize ?? 0.03;
-        const img = await textImage(ann.text, ann.color ?? '#000000');
+        const img = await textImage(ann.text, ann.color ?? '#000000', ann);
         if (img) {
           const png = await pdfDoc.embedPng(img.png);
           // Width as the score viewer lays it out (tiny font sizes in its 0–1 box come out a bit
           // wider than normal text), so the export matches what people saw.
-          const width = screenTextWidth(ann.text, fs, pw, ph) ?? img.width * fs;
+          const width = screenTextWidth(ann.text, fs, pw, ph, ann) ?? img.width * fs;
           page.drawImage(png, {
             x: ann.x * pw,
             y: ph - ann.y * ph - img.descent * fs * ph,
