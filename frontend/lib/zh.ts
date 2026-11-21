@@ -560,5 +560,8 @@ export const ZH: Record<string, string> = {
   'Repeat ×5': '重复 ×5',
   'Well done': '很好',
   'Well done!': '很好！',
+  'Zoom in': '放大谱子',
+  'Zoom out': '缩小谱子',
+  'Fit width': '适合宽度',
   'Pick one, then tap the score': '选一个，再点谱子放上去',
 };

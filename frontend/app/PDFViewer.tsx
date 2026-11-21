@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { SymbolId } from './symbols';
 import { SymbolShape, makeSymbolAnnotation, isSymbolId } from './SymbolPalette';
 import { useT } from '../lib/i18n';
@@ -65,6 +65,9 @@ interface Props {
   // Tells the toolbar which mark is selected (so text style buttons can change it)
   onSelectionChange?: (ann: any | null) => void;
 }
+
+const ZOOM_MIN = 0.5, ZOOM_MAX = 4;
+const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.9, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
 
 // ── Geometry helpers (pure, outside component) ────────────────────────────
 
@@ -269,6 +272,24 @@ export default function PDFViewer({
   const [pageMetas, setPageMetas] = useState<{ width: number; height: number }[]>([]);
   const [pageCanvases, setPageCanvases] = useState<(HTMLCanvasElement | null)[]>([]);
 
+  // ── Score zoom ───────────────────────────────────────────────────────────
+  // Only the score zooms (the toolbar stays put), and each person zooms on their own.
+  // 100% = page fits the width. The live value is a CSS variable (--z) so pinching stays smooth;
+  // React state follows a moment later (controls, sharp re-render, saved per device).
+  const [zoom, setZoomState] = useState(1);
+  const zoomRef = useRef(1);
+  const [availW, setAvailW] = useState(0);
+  const zoomCommitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Sharper canvases for the pages in view when zoomed in (or on Retina screens).
+  const [hiCanvases, setHiCanvases] = useState<Record<number, HTMLCanvasElement>>({});
+  useEffect(() => {
+    try {
+      const z = Number(localStorage.getItem('unino_zoom'));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restore this device's saved zoom after mount
+      if (z >= ZOOM_MIN && z <= ZOOM_MAX) { zoomRef.current = z; setZoomState(z); }
+    } catch {}
+  }, []);
+
   const [drawing, setDrawing] = useState(false);
   const [start, setStart] = useState<{ x: number; y: number; page: number } | null>(null);
   const [currentPoints, setCurrentPoints] = useState<{ x: number; y: number }[]>([]);
@@ -398,6 +419,163 @@ export default function PDFViewer({
     if (ann && hidden.has(ann.ownerId)) setSelected(null);
   }, [hidden, selected, annotations]);
 
+  // Zoom to z, keeping the score point under (clientX, clientY) in the same place on screen.
+  function zoomAt(z: number, clientX?: number, clientY?: number) {
+    const container = containerRef.current;
+    if (!container) return;
+    z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+    const cRect = container.getBoundingClientRect();
+    const cx = clientX ?? cRect.left + cRect.width / 2;
+    const cy = clientY ?? cRect.top + cRect.height / 2;
+    // Which page point is under the anchor now?
+    let anchor: { i: number; u: number; v: number } | null = null;
+    let best = Infinity;
+    svgRefs.current.forEach((svg, i) => {
+      if (!svg) return;
+      const r = svg.getBoundingClientRect();
+      const d = cy < r.top ? r.top - cy : cy > r.bottom ? cy - r.bottom : 0;
+      if (d < best) { best = d; anchor = { i, u: (cx - r.left) / r.width, v: (cy - r.top) / r.height }; }
+    });
+    zoomRef.current = z;
+    container.style.setProperty('--z', String(z));
+    if (anchor) {
+      const { i, u, v } = anchor as { i: number; u: number; v: number };
+      const r = svgRefs.current[i]!.getBoundingClientRect(); // forces layout at the new size
+      container.scrollLeft += r.left + u * r.width - cx;
+      container.scrollTop += r.top + v * r.height - cy;
+    }
+    onUserScroll?.();
+    if (zoomCommitRef.current) clearTimeout(zoomCommitRef.current);
+    zoomCommitRef.current = setTimeout(() => {
+      setZoomState(zoomRef.current);
+      try { localStorage.setItem('unino_zoom', String(zoomRef.current)); } catch {}
+    }, 250);
+  }
+  function zoomStep(dir: 1 | -1) {
+    const z = zoomRef.current;
+    const next = dir > 0 ? ZOOM_STEPS.find(s => s > z + 0.001) : [...ZOOM_STEPS].reverse().find(s => s < z - 0.001);
+    zoomAt(next ?? z);
+  }
+  const zoomAtRef = useRef(zoomAt);
+  zoomAtRef.current = zoomAt;
+
+  // Width available for a page at 100% (container minus its side padding).
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const cs = getComputedStyle(el);
+      const w = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      el.style.setProperty('--avail', `${w}px`);
+      setAvailW(w);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [pageMetas.length]);
+
+  // Ctrl/Cmd + scroll wheel and trackpad pinch (Chrome/Edge/Firefox send these as ctrl+wheel),
+  // Safari trackpad pinch (gesture events), and two-finger pinch on touch screens.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      // A mouse-wheel notch (~100) zooms about 1.35×; trackpad pinch sends small steps for smooth zoom.
+      const d = Math.max(-40, Math.min(40, e.deltaY));
+      zoomAtRef.current(zoomRef.current * Math.exp(-d * 0.0075), e.clientX, e.clientY);
+    };
+    let gestureStart = 1;
+    const onGestureStart = (e: Event) => { e.preventDefault(); gestureStart = zoomRef.current; };
+    const onGestureChange = (e: Event) => {
+      e.preventDefault();
+      const g = e as unknown as { scale: number; clientX: number; clientY: number };
+      zoomAtRef.current(gestureStart * g.scale, g.clientX, g.clientY);
+    };
+    let pinch: { d0: number; z0: number } | null = null;
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) pinch = { d0: dist(e.touches) || 1, z0: zoomRef.current };
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      zoomAtRef.current(pinch.z0 * dist(e.touches) / pinch.d0, mx, my);
+      // Keep the midpoint anchored as the fingers move, so pinching also pans.
+      pinch = { d0: dist(e.touches) || 1, z0: zoomRef.current };
+    };
+    const onTouchEnd = (e: TouchEvent) => { if (e.touches.length < 2) pinch = null; };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('gesturestart', onGestureStart as EventListener, { passive: false } as AddEventListenerOptions);
+    el.addEventListener('gesturechange', onGestureChange as EventListener, { passive: false } as AddEventListenerOptions);
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd);
+    el.addEventListener('touchcancel', onTouchEnd);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('gesturestart', onGestureStart as EventListener);
+      el.removeEventListener('gesturechange', onGestureChange as EventListener);
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [pageMetas.length]);
+
+  // Cmd/Ctrl + = / - / 0 zoom the score instead of the whole browser page.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      if (e.key === '=' || e.key === '+') { e.preventDefault(); zoomStep(1); }
+      else if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomStep(-1); }
+      else if (e.key === '0') { e.preventDefault(); zoomAtRef.current(1); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sharp rendering for the pages in view: pdf.js draws them again at the displayed size × screen
+  // density (capped), shortly after zooming or scrolling stops. Pages out of view drop back to the
+  // normal render to save memory.
+  const hiRenderRef = useRef(0);
+  useEffect(() => {
+    const doc = pdfDocRef.current;
+    if (!doc || !pageMetas.length || !availW) return;
+    const session = ++hiRenderRef.current;
+    const timer = setTimeout(async () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 3);
+      const want = new Set<number>();
+      pageRatiosRef.current.forEach((r, i) => { if (r > 0) want.add(i); });
+      want.add(currentPage); if (currentPage > 0) want.add(currentPage - 1); if (currentPage + 1 < pageMetas.length) want.add(currentPage + 1);
+      const next: Record<number, HTMLCanvasElement> = {};
+      for (const i of want) {
+        const meta = pageMetas[i];
+        const shown = Math.min(meta.width, availW) * zoom;
+        const scale = Math.min(1.5 * (shown * dpr) / meta.width, 1.5 * 4096 / meta.width, 1.5 * 4096 / meta.height);
+        if (scale <= 1.5 * 1.08) continue; // the normal render is sharp enough
+        const have = hiCanvases[i];
+        if (have && Math.abs(have.width / meta.width * 1.5 - scale) / scale < 0.15) { next[i] = have; continue; }
+        try {
+          const pg = await doc.getPage(i + 1);
+          if (hiRenderRef.current !== session) return;
+          const vp = pg.getViewport({ scale });
+          const c = document.createElement('canvas');
+          c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+          await pg.render({ canvas: c, canvasContext: c.getContext('2d')!, viewport: vp }).promise;
+          if (hiRenderRef.current !== session) return;
+          next[i] = c;
+        } catch {}
+      }
+      if (hiRenderRef.current === session) setHiCanvases(next);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [zoom, currentPage, availW, pageMetas]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Load PDF metadata ─────────────────────────────────────────────────
   useEffect(() => {
     if (!pdfUrl) return;
@@ -466,14 +644,17 @@ export default function PDFViewer({
 
   // ── Draw offscreen canvas to DOM canvas ───────────────────────────────
   useEffect(() => {
-    pageCanvases.forEach((off, i) => {
+    pageCanvases.forEach((base, i) => {
+      const off = hiCanvases[i] ?? base;
       if (!off) return;
       const dom = canvasRefs.current[i];
       if (!dom) return;
+      if (dom.width === off.width && dom.height === off.height && dom.dataset.src === (hiCanvases[i] ? 'hi' : 'base')) return;
       dom.width = off.width; dom.height = off.height;
+      dom.dataset.src = hiCanvases[i] ? 'hi' : 'base';
       dom.getContext('2d')?.drawImage(off, 0, 0);
     });
-  }, [pageCanvases]);
+  }, [pageCanvases, hiCanvases]);
 
   // ── Symbols tool keys: 0–4 stamp a fingering at the cursor, Esc leaves the tool ──
   const placeSymbolRef = useRef<(id: SymbolId, page: number, pos: { x: number; y: number }) => void>(() => {});
@@ -672,7 +853,8 @@ export default function PDFViewer({
     return d;
   }
 
-  function eraserRadius(pageWidth: number) { return (strokeWidth * 4) / pageWidth; }
+  // Eraser size is fixed on screen, so it uses the page's displayed width (which changes with zoom).
+  function eraserRadius(pageWidth: number) { return (strokeWidth * 4) / (Math.min(pageWidth, availW || pageWidth) * zoom); }
 
   function distToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number, aspect = 1) {
     const Py = py * aspect, Ay = ay * aspect, By = by * aspect;
@@ -909,7 +1091,8 @@ export default function PDFViewer({
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (!panningRef.current) return false;
     const n = touches.size;
-    containerRef.current?.scrollBy((prev.x - e.clientX) / n, (prev.y - e.clientY) / n);
+    if (n >= 2) return true; // two fingers: the pinch-zoom handler moves and zooms the score
+    containerRef.current?.scrollBy(prev.x - e.clientX, prev.y - e.clientY);
     onUserScroll?.();
     return true;
   }
@@ -1232,7 +1415,10 @@ export default function PDFViewer({
   }
 
   return (
-    <div ref={containerRef} className="overflow-y-auto h-full bg-[#f5f5f7] flex flex-col items-center gap-4 sm:gap-8 py-4 sm:py-8 px-2 sm:px-4">
+    <div ref={containerRef} className="overflow-auto h-full bg-[#f5f5f7] py-4 sm:py-8 px-2 sm:px-4"
+      style={{ ['--z' as string]: zoom, touchAction: 'pan-x pan-y' } as React.CSSProperties}>
+      {/* Pages: wider than the screen when zoomed in, and still centered when smaller */}
+      <div className="flex flex-col items-center gap-4 sm:gap-8" style={{ width: 'max-content', minWidth: '100%' }}>
       {pageMetas.map((meta, pageIndex) => {
         const asp = meta.height / meta.width;
         // Handle radius in normalized x-axis units; ry corrects for aspect ratio.
@@ -1262,7 +1448,7 @@ export default function PDFViewer({
             ref={el => { pageContainerRefs.current[pageIndex] = el; }}
             data-page-index={String(pageIndex)}
             className="flex flex-col items-center gap-2"
-            style={{ width: meta.width, maxWidth: '100%' }}
+            style={{ width: `calc(min(${meta.width}px, var(--avail, 100%)) * var(--z, 1))` }}
           >
             <div className="text-gray-400 text-xs font-medium">{t('Page {n}', { n: pageIndex + 1 })}</div>
             <div className="relative bg-white rounded-xl overflow-hidden ring-1 ring-black/[0.06] shadow-[0_8px_30px_rgba(0,0,0,0.10)] w-full">
@@ -1516,9 +1702,12 @@ export default function PDFViewer({
         );
       })}
 
-      {/* Floating page-jump nav */}
-      {pageMetas.length > 1 && (
+      </div>
+
+      {/* Floating bar: page arrows and score zoom */}
+      {(
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-gray-900/75 backdrop-blur-md text-white rounded-full px-1.5 py-1.5 shadow-2xl">
+          {pageMetas.length > 1 && (<>
           <button
             onClick={() => (onStepPage ? onStepPage(-1) : onPageChange(currentPage - 1))}
             disabled={!navLabel && currentPage === 0}
@@ -1539,6 +1728,18 @@ export default function PDFViewer({
           >
             <ChevronRight />
           </button>
+          <span className="w-px h-5 bg-white/20 mx-1" />
+          </>)}
+          <button onClick={() => zoomStep(-1)} disabled={zoom <= ZOOM_MIN + 0.001}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-25 transition-colors text-lg leading-none"
+            aria-label={t('Zoom out')} title={t('Zoom out') + ' (⌘−)'}>−</button>
+          <button onClick={() => zoomAt(1)} title={t('Fit width') + ' (⌘0)'} aria-label={t('Fit width')}
+            className="h-8 min-w-[52px] px-1.5 rounded-full hover:bg-white/15 text-[12px] font-medium tabular-nums transition-colors">
+            {Math.round(zoom * 100)}%
+          </button>
+          <button onClick={() => zoomStep(1)} disabled={zoom >= ZOOM_MAX - 0.001}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-25 transition-colors text-lg leading-none"
+            aria-label={t('Zoom in')} title={t('Zoom in') + ' (⌘+)'}>+</button>
         </div>
       )}
     </div>
