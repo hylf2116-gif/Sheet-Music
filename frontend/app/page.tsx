@@ -35,6 +35,7 @@ import type { SymbolId } from './symbols';
 import { usePhone, useNarrow } from './useMediaQuery';
 import OMRPanel, { type OmrState, type OmrPrefs, type OmrMeasure, DEFAULT_OMR_PREFS } from './OMRPanel';
 import { useT, type TFunc } from '../lib/i18n';
+import { LogoMark } from './Logo';
 
 const OMR_PREFS_KEY = 'unino_omr_prefs';
 
@@ -1400,13 +1401,7 @@ export default function Home() {
           {/* ── Header ── */}
           <header className="relative z-20 px-10 py-6 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div style={{ width: 28, height: 28, borderRadius: 'var(--r-sm)', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14 }}>
-                  <path d="M9 18V5l12-2v13"/>
-                  <circle cx="6" cy="18" r="3"/>
-                  <circle cx="18" cy="16" r="3"/>
-                </svg>
-              </div>
+              <LogoMark size={30} />
               <span className="text-lg font-bold tracking-tight">Unino</span>
             </div>
 

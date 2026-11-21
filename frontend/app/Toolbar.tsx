@@ -6,6 +6,7 @@ import { SYMBOL_LABELS } from './symbols';
 import SymbolPopover, { SymbolIcon, type SymbolSize } from './SymbolPalette';
 import { useT } from '../lib/i18n';
 import { PERSON_PALETTE } from './ColorModePicker';
+import { LogoMark } from './Logo';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -508,7 +509,7 @@ export default function Toolbar(p: ToolbarProps) {
           <div className="flex items-center gap-0.5 px-3 min-w-0 overflow-x-auto no-scrollbar" style={{ flex: '1 1 0' }}>
             <button onClick={p.onGoHome}
               className="flex items-center gap-2 pl-1 pr-3 h-9 rounded-lg text-gray-800 hover:bg-black/[0.04] transition-colors shrink-0">
-              <Icon name="music" size={17} />
+              <LogoMark size={22} />
               <span className="text-sm font-semibold tracking-tight text-indigo-600">Unino</span>
             </button>
 
@@ -636,7 +637,7 @@ export default function Toolbar(p: ToolbarProps) {
       <button onClick={p.onGoHome}
         className="flex items-center gap-2.5 px-4 h-14 shrink-0 text-gray-800 hover:bg-black/[0.03] transition-colors"
         style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-        <Icon name="music" size={17} />
+        <LogoMark size={22} />
         <span className="text-sm font-semibold tracking-tight text-indigo-600">Unino</span>
       </button>
 
