@@ -88,6 +88,8 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 // With DATA_DIR set (online), uploads live on the same volume; locally they stay in backend/uploads.
 const UPLOADS_DIR = process.env.DATA_DIR ? path.join(DATA_DIR, 'uploads') : path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+// The recycle folder for old PDFs is never served.
+app.use('/uploads/_trash', (req, res) => res.status(404).end());
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Simple per-IP limit for expensive routes (in memory; fine for a single server).
@@ -411,20 +413,12 @@ app.post('/room/:roomId/delete', async (req, res) => {
   if (!room) return res.status(404).json({ error: 'Room not found' });
   const { hostToken, supabaseToken } = req.body || {};
   if (!(await requestIsHost(room, hostToken, supabaseToken))) return res.status(403).json({ error: 'Only the host can delete this room.' });
-  const pdf = roomPdfFile(room);
   delete rooms[roomId];
   saveRooms();
   io.to(roomId).emit('room-deleted');
-  if (pdf) removePdfIfUnused(pdf);
+  // The PDF is not deleted here: the upload cleanup (below) handles unused PDFs safely.
   res.json({ ok: true });
 });
-
-function removePdfIfUnused(pdf) {
-  const stillUsed = Object.values(rooms).some((r) => roomPdfFile(r)?.stem === pdf.stem);
-  if (stillUsed) return;
-  try { fs.unlinkSync(pdf.file); } catch {}
-  try { fs.rmSync(path.join(OMR_DIR, pdf.stem), { recursive: true, force: true }); } catch {}
-}
 
 // ── IMSLP routes (keep in own section for easy removal) ───────────────────
 app.get('/imslp/search', async (req, res) => {
@@ -738,7 +732,6 @@ io.on('connection', (socket) => {
     if (typeof pdfUrl !== 'string' || !/^\/uploads\/[\w-]+\.pdf$/i.test(pdfUrl)
         || !fs.existsSync(path.join(UPLOADS_DIR, path.basename(pdfUrl)))) return;
     if (!Array.isArray(pageMap) || !pageMap.every((n) => Number.isInteger(n) && n >= -1 && n < 100000)) return;
-    const oldPdf = roomPdfFile(room);
     room.shapes = room.shapes
       .filter((sh) => Number.isInteger(sh.page) && pageMap[sh.page] !== undefined && pageMap[sh.page] >= 0)
       .map((sh) => ({ ...sh, page: pageMap[sh.page] }));
@@ -752,7 +745,6 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('score-replaced', { pdfUrl, shapes: room.shapes });
     io.to(roomId).emit('play-order', { order: null });
     io.to(roomId).emit('omr-state', omrStateFor(room));
-    if (oldPdf) removePdfIfUnused(oldPdf);
   });
 
   // Page play order for repeats (e.g. [0,1,2,1,2,3]); null turns it off. Host only.
@@ -1020,6 +1012,30 @@ io.on('connection', (socket) => {
     delete socketClientId[socket.id];
   });
 });
+
+// ── Upload cleanup ─────────────────────────────────────────────────────────
+// Unused PDFs go to uploads/_trash after 7 days and are deleted 7 days later (see uploadCleanup.js).
+const { sweepUploads } = require('./uploadCleanup');
+function referencedPdfNames() {
+  const names = new Set();
+  for (const room of Object.values(rooms)) {
+    try { names.add(path.basename(new URL(room.pdfUrl, 'http://local').pathname)); } catch {}
+  }
+  return names;
+}
+function runUploadCleanup() {
+  try {
+    sweepUploads({
+      uploadsDir: UPLOADS_DIR,
+      omrDir: OMR_DIR,
+      stateFile: path.join(DATA_DIR, 'upload-cleanup.json'),
+      logFile: path.join(DATA_DIR, 'upload-cleanup.log'),
+      referencedNames: referencedPdfNames,
+    });
+  } catch (err) { console.error('[upload-cleanup] failed:', err.message); }
+}
+setTimeout(runUploadCleanup, 60 * 1000).unref();          // a minute after start
+setInterval(runUploadCleanup, 6 * 60 * 60 * 1000).unref(); // then every 6 hours
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
