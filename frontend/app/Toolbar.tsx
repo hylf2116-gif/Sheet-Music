@@ -441,7 +441,7 @@ export default function Toolbar(p: ToolbarProps) {
         {/* Row 1: home, room status, share */}
         <div className="flex items-center gap-1 px-2" style={{ height: 48 }}>
           <button onClick={p.onGoHome} aria-label={t('Home')} className={`${iconBtn} text-indigo-600`}>
-            <Icon name="music" size={19} />
+            <LogoMark size={24} />
           </button>
           {p.nickname && (
             <button onClick={p.onRename} title={t('Change name')}

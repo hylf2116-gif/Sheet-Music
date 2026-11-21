@@ -26,9 +26,10 @@ interface Props {
   colorMode?: string;
   user: User | null;
   onImportSuccess: (data: ImportResult) => void;
+  onUploadPdf?: () => void; // opens the normal PDF picker
 }
 
-export default function IMSLPPanel({ clientId, colorMode, user, onImportSuccess }: Props) {
+export default function IMSLPPanel({ clientId, colorMode, user, onImportSuccess, onUploadPdf }: Props) {
   const t = useT();
   // ── Search state ───────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
@@ -283,8 +284,27 @@ export default function IMSLPPanel({ clientId, colorMode, user, onImportSuccess 
               padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.08)',
               border: '1px solid rgba(239,68,68,0.2)', fontSize: 12, color: 'var(--t2)',
             }}>
-              <p style={{ margin: 0, lineHeight: 1.5 }}>{t(importError.message)}</p>
-              {importError.fallbackUrl && (
+              {importError.code === 'imslp_html_page' ? (
+                // IMSLP now shows a browser check before downloads, so a server can't fetch the
+                // file. The reliable way: the person downloads it, then uploads it here.
+                <>
+                  <p style={{ margin: 0, lineHeight: 1.5, fontWeight: 600, color: 'var(--t)' }}>{t('IMSLP only allows this download in your own browser.')}</p>
+                  <p style={{ margin: '4px 0 0', lineHeight: 1.5 }}>{t('It takes two steps: open the file on IMSLP and download it, then upload that PDF here.')}</p>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    <a href={importError.fallbackUrl || importUrl} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, background: 'rgba(251,191,36,0.15)', color: '#d97706', textDecoration: 'none' }}>
+                      {t('1. Download from IMSLP')} ↗
+                    </a>
+                    {onUploadPdf && (
+                      <button type="button" onClick={onUploadPdf}
+                        style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(99,102,241,0.18)', color: '#6366f1' }}>
+                        {t('2. Upload the PDF')}
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : <p style={{ margin: 0, lineHeight: 1.5 }}>{t(importError.message)}</p>}
+              {importError.code !== 'imslp_html_page' && importError.fallbackUrl && (
                 <a
                   href={importError.fallbackUrl}
                   target="_blank"

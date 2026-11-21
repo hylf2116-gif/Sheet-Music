@@ -301,6 +301,26 @@ export default function PDFViewer({
   const renderSessionRef = useRef(0);
   const lastReportedPageRef = useRef(-1);
   const isProgrammaticScrollRef = useRef(false);
+  // Our own smooth scrolls can take longer than any fixed delay (long scores, far jumps), so the
+  // flag stays on until scrolling has been quiet for a moment (with a safety limit).
+  const programmaticEndRef = useRef<(() => void) | null>(null);
+  function startProgrammaticScroll(maxMs = 3000) {
+    programmaticEndRef.current?.();
+    const container = containerRef.current;
+    isProgrammaticScrollRef.current = true;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const end = () => {
+      clearTimeout(quiet); clearTimeout(limit);
+      container?.removeEventListener('scroll', onScroll);
+      if (programmaticEndRef.current === end) programmaticEndRef.current = null;
+      isProgrammaticScrollRef.current = false;
+    };
+    const onScroll = () => { clearTimeout(quiet); quiet = setTimeout(end, 180); };
+    const limit = setTimeout(end, maxMs);
+    quiet = setTimeout(end, 400); // in case the page is already there and nothing scrolls
+    container?.addEventListener('scroll', onScroll, { passive: true });
+    programmaticEndRef.current = end;
+  }
   const selfNavigatedRef = useRef(false);
   const onPageChangeRef = useRef(onPageChange);
   const pageRatiosRef = useRef<number[]>([]);
@@ -425,15 +445,13 @@ export default function PDFViewer({
     const sRect = svg.getBoundingClientRect();
     const cRect = container.getBoundingClientRect();
     const top = container.scrollTop + (sRect.top - cRect.top) + measureJump.y * sRect.height - 120;
-    isProgrammaticScrollRef.current = true;
+    startProgrammaticScroll();
     container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
     // Keep the page counter in sync (fromScroll=true so it does not re-scroll to the page top).
     if (measureJump.page !== currentPage) {
       selfNavigatedRef.current = true;
       onPageChange(measureJump.page, true);
     }
-    const t = setTimeout(() => { isProgrammaticScrollRef.current = false; }, 900);
-    return () => clearTimeout(t);
   }, [measureJump?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Scroll to currentPage ─────────────────────────────────────────────
@@ -442,11 +460,9 @@ export default function PDFViewer({
     if (selfNavigatedRef.current) { selfNavigatedRef.current = false; return; }
     const el = pageContainerRefs.current[currentPage];
     if (!el) return;
-    isProgrammaticScrollRef.current = true;
+    startProgrammaticScroll();
     lastReportedPageRef.current = currentPage;
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    const t = setTimeout(() => { isProgrammaticScrollRef.current = false; }, 900);
-    return () => clearTimeout(t);
   }, [currentPage, pageMetas.length]);
 
   // ── IntersectionObserver: page sync ──────────────────────────────────
@@ -454,11 +470,12 @@ export default function PDFViewer({
     if (!pageMetas.length) return;
     pageRatiosRef.current = new Array(pageMetas.length).fill(0);
     const obs = new IntersectionObserver(entries => {
-      if (isProgrammaticScrollRef.current) return;
+      // Always record what is visible, so the numbers are right once our own scroll ends.
       entries.forEach(e => {
         const idx = Number(e.target.getAttribute('data-page-index'));
         if (!isNaN(idx)) pageRatiosRef.current[idx] = e.intersectionRatio;
       });
+      if (isProgrammaticScrollRef.current) return;
       let maxR = 0, best = lastReportedPageRef.current;
       pageRatiosRef.current.forEach((r, i) => { if (r > maxR) { maxR = r; best = i; } });
       if (maxR > 0 && best !== lastReportedPageRef.current) {
@@ -851,9 +868,10 @@ export default function PDFViewer({
 
   function onPointerDown(e: React.PointerEvent, pageIndex: number) {
     if (e.button !== 0) return;
-    if (handlePanDown(e)) return;
-    // Touch long-press (iPad) opens the symbol menu at that spot, from any tool.
-    if (e.pointerType === 'touch' && onSymbolMenu) {
+    const panning = handlePanDown(e);
+    // Touch long-press (iPad) opens the symbol menu at that spot, from any tool. This also works
+    // after the Pencil has been used, when a single finger otherwise only scrolls.
+    if (e.pointerType === 'touch' && onSymbolMenu && panTouchesRef.current.size <= 1) {
       cancelLongPress();
       const { clientX, clientY } = e;
       longPressRef.current = {
@@ -866,6 +884,7 @@ export default function PDFViewer({
         }, 550),
       };
     }
+    if (panning) return;
     if (activeTool === 'laser') return;
     if (activeTool === 'symbol') {
       const pos = getPagePos(e, pageIndex);
@@ -906,11 +925,11 @@ export default function PDFViewer({
   }
 
   function onPointerMove(e: React.PointerEvent, pageIndex: number) {
-    if (handlePanMove(e)) return;
-    // A finger that moves is drawing, not long-pressing.
+    // A finger that moves is drawing or scrolling, not long-pressing.
     if (longPressRef.current && Math.hypot(e.clientX - longPressRef.current.x, e.clientY - longPressRef.current.y) > 8) {
       cancelLongPress();
     }
+    if (handlePanMove(e)) return;
     if (activeTool === 'symbol') {
       const pos = getPagePos(e, pageIndex);
       setSymbolCursor(pos ? { x: pos.x, y: pos.y, page: pageIndex } : null);

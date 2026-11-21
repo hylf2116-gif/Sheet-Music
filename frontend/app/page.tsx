@@ -47,6 +47,34 @@ type HistoryOp =
   | { kind: 'update'; id: string; before: any; after: any };
 
 const socket = io(BACKEND_URL);
+
+// Offline edits. While the connection is down, socket.io keeps emits in a buffer and sends
+// them the moment it reconnects, before our 'connect' handler can re-join the room, so the
+// server would drop them. We take them out of the buffer when the transport reopens and send
+// them again right after join-room. pendingShapeIds keeps those drawings on screen meanwhile.
+let offlineQueue: unknown[][] = [];
+const pendingShapeIds = new Set<string>();
+socket.io.on('open', () => {
+  const buf = (socket as unknown as { sendBuffer: { data: unknown[] }[] }).sendBuffer;
+  if (!buf.length) return;
+  for (const packet of buf) {
+    const args = packet.data;
+    if (args[0] === 'new-shape') {
+      const id = (args[1] as { shape?: { id?: string } })?.shape?.id;
+      if (id) pendingShapeIds.add(id);
+    }
+    offlineQueue.push(args);
+  }
+  buf.length = 0;
+});
+function flushOfflineQueue(skipJoin: boolean) {
+  const queued = offlineQueue;
+  offlineQueue = [];
+  for (const args of queued) {
+    if (skipJoin && args[0] === 'join-room') continue;
+    socket.emit(...(args as [string, ...unknown[]]));
+  }
+}
 const POS_KEY = 'unino_toolbar_pos';
 
 function getOrCreateClientId(): string {
@@ -660,18 +688,27 @@ export default function Home() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync socket id if the socket connected before mount
     if (socket.connected) setMySocketId(socket.id!);
-    socket.on('connect', () => {
+    socket.on('connect', async () => {
       setMySocketId(socket.id!);
       if (roomIdRef.current && nicknameRef.current) {
         const rid = roomIdRef.current;
         let storedHostToken: string | null = null;
         try { storedHostToken = localStorage.getItem(`unino_host_${rid}`); } catch {}
+        // Signed-in hosts on another device have no stored token, so send the login too.
+        let supabaseToken: string | null = null;
+        if (!storedHostToken && supabase) {
+          try { const { data } = await supabase.auth.getSession(); supabaseToken = data.session?.access_token ?? null; } catch {}
+        }
         socket.emit('join-room', {
           roomId: rid,
           nickname: nicknameRef.current,
           clientId: myClientId,
           hostToken: storedHostToken,
+          supabaseToken,
         });
+        flushOfflineQueue(true);
+      } else {
+        flushOfflineQueue(false);
       }
     });
 
@@ -681,7 +718,11 @@ export default function Home() {
 
     socket.on('load-shapes', (existing: any[]) => {
       const seen = new Set<string>();
-      setAnnotations(existing.filter(a => seen.has(a.id) ? false : seen.add(a.id) && true));
+      const fromServer = existing.filter(a => seen.has(a.id) ? false : seen.add(a.id) && true);
+      // Keep drawings made while offline; they are being re-sent right now.
+      const pending = new Set(pendingShapeIds); // copy: React runs the update later
+      pendingShapeIds.clear();
+      setAnnotations(prev => [...fromServer, ...prev.filter(a => pending.has(a.id) && !seen.has(a.id))]);
     });
     socket.on('new-shape', (shape: any) =>
       setAnnotations(prev => prev.some(a => a.id === shape.id) ? prev : [...prev, shape]));
@@ -1644,6 +1685,7 @@ export default function Home() {
                   colorMode={newRoomColorMode}
                   user={user}
                   onImportSuccess={handleIMSLPImport}
+                  onUploadPdf={() => sidebarUploadRef.current?.click()}
                 />
               </div>
             </div>

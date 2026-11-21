@@ -1,4 +1,4 @@
-import { PDFDocument, rgb, LineCapStyle, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, LineCapStyle } from 'pdf-lib';
 import { SYMBOL_DEFS, type SymbolId } from './symbols';
 
 // Transform every x,y pair of an SVG path that uses only absolute M/L/C/Q/Z commands
@@ -16,6 +16,55 @@ function mapPathPoints(d: string, f: (x: number, y: number) => [number, number])
     pending = null;
   }
   return out.join(' ');
+}
+
+// Render one line of text to a PNG. Sizes come back in ems so the caller can scale them.
+const TEXT_EM = 96; // pixels per em: sharp enough for printing
+async function textImage(text: string, color: string) {
+  if (typeof document === 'undefined') return null;
+  const family = getComputedStyle(document.body).fontFamily || 'sans-serif';
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const font = `${TEXT_EM}px ${family}`;
+  ctx.font = font;
+  const m = ctx.measureText(text);
+  const ascent = m.fontBoundingBoxAscent ?? TEXT_EM * 0.9;
+  const descent = m.fontBoundingBoxDescent ?? TEXT_EM * 0.25;
+  canvas.width = Math.max(1, Math.ceil(m.width));
+  canvas.height = Math.max(1, Math.ceil(ascent + descent));
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(text, 0, ascent);
+  const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
+  if (!blob) return null;
+  return {
+    png: new Uint8Array(await blob.arrayBuffer()),
+    width: canvas.width / TEXT_EM,
+    ascent: ascent / TEXT_EM,
+    descent: descent / TEXT_EM,
+  };
+}
+
+// Text width (as a fraction of page width) in an SVG set up like the score viewer.
+function screenTextWidth(text: string, fs: number, pw: number, ph: number): number | null {
+  if (typeof document === 'undefined') return null;
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  const W = 900;
+  svg.setAttribute('viewBox', '0 0 1 1');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('width', String(W));
+  svg.setAttribute('height', String(Math.round(W * ph / pw)));
+  svg.style.cssText = 'position:absolute;left:-10000px;top:0;visibility:hidden';
+  const t = document.createElementNS(ns, 'text');
+  t.setAttribute('font-size', String(fs));
+  t.textContent = text;
+  svg.appendChild(t);
+  document.body.appendChild(svg);
+  try { const w = t.getComputedTextLength(); return w > 0 ? w : null; }
+  finally { svg.remove(); }
 }
 
 // ── Filename helpers ──────────────────────────────────────────────────────────
@@ -92,10 +141,17 @@ export async function exportAnnotatedPDF(
   }
 
   // ── Step 2: build the PDF ────────────────────────────────────────────────
+  const pdfBytes = await buildAnnotatedPDF(pdfUrl, annotations);
+
+  // ── Step 3: save ─────────────────────────────────────────────────────────
+  return saveBytes(pdfBytes, fileHandle, filename);
+}
+
+// The score with every annotation drawn onto its pages, as PDF bytes.
+export async function buildAnnotatedPDF(pdfUrl: string, annotations: any[]): Promise<Uint8Array> {
   const existingBytes = await fetch(pdfUrl).then(r => r.arrayBuffer());
   const pdfDoc = await PDFDocument.load(existingBytes);
   const pages = pdfDoc.getPages();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
     const page = pages[pageIndex];
@@ -154,20 +210,33 @@ export async function exportAnnotatedPDF(
           });
         }
 
-      } else if (ann.type === 'text') {
-        const fontSize = (ann.fontSize ?? 0.03) * ph;
-        page.drawText(ann.text ?? '', {
-          x: ann.x * pw,
-          y: ph - ann.y * ph - fontSize,
-          size: fontSize, color, font,
-        });
+      } else if (ann.type === 'text' && ann.text) {
+        // Text is drawn as an image so any language works (the built-in PDF fonts only cover
+        // Western letters, so Chinese used to break the whole export). On screen the text sits in a
+        // 0–1 box stretched to the page: its baseline is at y, its height is fontSize × page height
+        // and its width is scaled by the page width.
+        const fs = ann.fontSize ?? 0.03;
+        const img = await textImage(ann.text, ann.color ?? '#000000');
+        if (img) {
+          const png = await pdfDoc.embedPng(img.png);
+          // Width as the score viewer lays it out (tiny font sizes in its 0–1 box come out a bit
+          // wider than normal text), so the export matches what people saw.
+          const width = screenTextWidth(ann.text, fs, pw, ph) ?? img.width * fs;
+          page.drawImage(png, {
+            x: ann.x * pw,
+            y: ph - ann.y * ph - img.descent * fs * ph,
+            width: width * pw,
+            height: (img.ascent + img.descent) * fs * ph,
+          });
+        }
       }
     }
   }
 
-  const pdfBytes = await pdfDoc.save();
+  return pdfDoc.save();
+}
 
-  // ── Step 3: save ─────────────────────────────────────────────────────────
+async function saveBytes(pdfBytes: Uint8Array, fileHandle: any, filename: string): Promise<'native' | 'downloads'> {
   if (fileHandle) {
     const writable = await fileHandle.createWritable();
     await writable.write(pdfBytes);
