@@ -12,6 +12,8 @@ export interface OmrState {
   pages?: { page: number; measures: OmrMeasure[]; staffHeight?: number }[];
   measureCount?: number;
   hasMusicXml?: boolean;
+  // Still recognizing, but the pages finished so far (pages/measureCount) can already be used
+  partial?: boolean;
   progress?: { page: number; total: number | null } | null;
   startedAt?: number;
   error?: string;
@@ -78,7 +80,8 @@ export default function OMRPanel({
   }, [onClose]);
 
   const status = state?.status ?? 'none';
-  const done = status === 'done';
+  // Bars can be used once recognized, also while later pages are still being recognized.
+  const done = status === 'done' || (status === 'running' && !!state?.partial);
   const set = (k: keyof OmrPrefs) => (v: boolean) => onPrefsChange({ ...prefs, [k]: v });
 
   function submitJump(e: React.FormEvent) {
@@ -93,6 +96,7 @@ export default function OMRPanel({
   if (status === 'running') {
     const p = state?.progress;
     statusText = p?.total ? t('Detecting measures… page {page} of {total}', { page: p.page, total: p.total }) : t('Detecting measures…');
+    if (state?.partial) statusText += ' · ' + t('{n} bars ready to use', { n: state?.measureCount ?? 0 });
   } else if (status === 'done') statusText = t('{n} bars detected', { n: state?.measureCount ?? 0 });
   else if (status === 'error') statusText = t(state?.error || 'Detection failed');
   else if (status === 'unavailable') statusText = t(state?.reason || 'Measure detection is not available');

@@ -36,6 +36,7 @@ import { usePhone, useNarrow } from './useMediaQuery';
 import OMRPanel, { type OmrState, type OmrPrefs, type OmrMeasure, DEFAULT_OMR_PREFS } from './OMRPanel';
 import { useT, type TFunc } from '../lib/i18n';
 import { LogoMark } from './Logo';
+import PlaybackBar from './PlaybackBar';
 import { TEMPLATES, DEFAULT_TEXT_STYLE, type TextStyle } from '../lib/annotationStyle';
 
 const OMR_PREFS_KEY = 'unino_omr_prefs';
@@ -411,7 +412,8 @@ export default function Home() {
     try { localStorage.setItem(OMR_PREFS_KEY, JSON.stringify(p)); } catch {}
   }
   const measuresByPage = useMemo(() => {
-    if (omrState?.status !== 'done' || !omrState.pages) return null;
+    // Finished pages are usable while later pages are still being recognized.
+    if (!omrState?.pages || (omrState.status !== 'done' && !omrState.partial)) return null;
     const map: Record<number, OmrMeasure[]> = {};
     for (const p of omrState.pages) map[p.page] = p.measures;
     return map;
@@ -423,6 +425,67 @@ export default function Home() {
       if (m) { setMeasureJump({ page: p.page, y: m.y, n, nonce: Date.now() }); return true; }
     }
     return false;
+  }
+  // Playback of the recognized score: the bar being played (local to this device).
+  const [playingBar, setPlayingBar] = useState<number | null>(null);
+  const lastPlayedLineRef = useRef<string>('');
+  // Keep the played bar on screen: scroll when playback moves to a new line of music (or page).
+  function keepBarInView(n: number) {
+    for (const p of omrStateRef.current?.pages ?? []) {
+      const m = p.measures.find(mm => mm.n === n);
+      if (!m) continue;
+      const line = `${p.page}:${m.y.toFixed(3)}`;
+      if (line !== lastPlayedLineRef.current) { lastPlayedLineRef.current = line; jumpToMeasureLocal(n); }
+      return;
+    }
+  }
+  // Out-of-tune notes found by "Follow me" become small marks above their bars (one undo step).
+  function markOffNotes(list: { bar: number; midi: number; cents: number }[]) {
+    const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+    const byBar = new Map<number, string[]>();
+    for (const o of list) {
+      const label = `${NAMES[o.midi % 12]} ${o.cents > 0 ? '↑+' : '↓'}${o.cents}¢`;
+      const arr = byBar.get(o.bar) ?? [];
+      if (!arr.includes(label)) arr.push(label);
+      byBar.set(o.bar, arr);
+    }
+    beginHistoryBatch();
+    for (const [bar, labels] of byBar) {
+      for (const pg of omrStateRef.current?.pages ?? []) {
+        const m = pg.measures.find(mm => mm.n === bar);
+        if (!m) continue;
+        handleAnnotationAdd({
+          id: crypto.randomUUID(), type: 'text', page: pg.page,
+          x: m.x + 0.005, y: Math.max(0.02, m.y - 0.004), text: labels.slice(0, 3).join('  '),
+          color: myPersonColor ?? '#f97316', fontSize: 0.018, bold: true,
+        });
+        break;
+      }
+    }
+    endHistoryBatch();
+  }
+  // AI marks: text above each bar (stacked when a bar gets several), hard bars lightly highlighted.
+  function placeAiMarks(marks: { bar: number; kind: string; text: string }[]) {
+    const perBar = new Map<number, number>();
+    beginHistoryBatch();
+    for (const mk of marks) {
+      for (const pg of omrStateRef.current?.pages ?? []) {
+        const m = pg.measures.find(mm => mm.n === mk.bar);
+        if (!m) continue;
+        const k = perBar.get(mk.bar) ?? 0;
+        perBar.set(mk.bar, k + 1);
+        handleAnnotationAdd({
+          id: crypto.randomUUID(), type: 'text', page: pg.page,
+          x: m.x + 0.005, y: Math.max(0.02, m.y - 0.004 - k * 0.02), text: '✦ ' + mk.text,
+          color: myPersonColor ?? '#7c3aed', fontSize: 0.016, bold: k === 0,
+        });
+        if (mk.kind === 'difficult' && k === 0) {
+          handleAnnotationAdd({ id: crypto.randomUUID(), type: 'highlight', page: pg.page, x: m.x, y: m.y, w: m.w, h: m.h, color: '#c4b5fd' });
+        }
+        break;
+      }
+    }
+    endHistoryBatch();
   }
   const [imslpSource, setImslpSource] = useState<{ pageUrl: string; fileUrl: string } | null>(null);
 
@@ -1920,7 +1983,7 @@ export default function Home() {
               onScrollPositionChange={handleScrollPositionChange}
               measuresByPage={measuresByPage}
               showMeasureNumbers={omrPrefs.showNumbers}
-              highlightedMeasure={omrPrefs.showHighlight ? (omrState?.highlightedMeasure ?? null) : null}
+              highlightedMeasure={playingBar ?? (omrPrefs.showHighlight ? (omrState?.highlightedMeasure ?? null) : null)}
               measureClickMode={omrPrefs.clickToHighlight && !!measuresByPage}
               onMeasureClick={handleMeasureClick}
               measureJump={measureJump}
@@ -2105,6 +2168,21 @@ export default function Home() {
           }}
           onClose={() => setLayersOpen(false)}
         />
+      )}
+
+      {/* Playback of the recognized score (above the page bar) */}
+      {roomId && omrState?.hasMusicXml && (omrState.status === 'done' || omrState.partial) && (
+        <div className="fixed left-1/2 -translate-x-1/2 z-40" style={{ bottom: 64 }}>
+          <PlaybackBar roomId={roomId} ready
+            version={`${omrState.status}:${omrState.measureCount ?? 0}`}
+            partial={!!omrState.partial}
+            startBar={omrState.highlightedMeasure ?? null}
+            onBar={b => { setPlayingBar(b); if (b == null) lastPlayedLineRef.current = ''; }}
+            keepInView={keepBarInView}
+            onMarkOffNotes={markOffNotes}
+            isHost={isHost}
+            onAiMarks={placeAiMarks} />
+        </div>
       )}
 
       {/* Follow the teacher (students only) */}
