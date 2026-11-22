@@ -1,0 +1,8 @@
+# Never copy secrets, local data or local uploads into the server image.
+.env
+.env.*
+node_modules
+data
+uploads
+.claude
+.DS_Store
