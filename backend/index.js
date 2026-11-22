@@ -324,6 +324,7 @@ app.post('/create-room', createRoomLimit, async (req, res) => {
     lastActive: new Date().toISOString(),
   };
   saveRooms();
+  autoStartOmr(rooms[roomId]);
   res.json({ roomId, hostToken });
 });
 
@@ -498,6 +499,7 @@ app.post('/imslp/import', async (req, res) => {
       },
     };
     saveRooms();
+    autoStartOmr(rooms[roomId]);
     res.json({ roomId, hostToken, pdfUrl: pdfFileUrl, scoreName, imslpPageUrl: pageUrl || fileUrl });
   } catch (err) {
     console.error('IMSLP import error:', err.code, err.message);
@@ -545,7 +547,14 @@ function omrStateFor(room) {
   const base = { highlightedMeasure: room.highlightedMeasure ?? null };
   if (!pdf) return { ...base, status: 'unavailable', reason: 'PDF file not found on server' };
   const job = omrJobs[pdf.stem];
-  if (job?.status === 'running') return { ...base, status: 'running', startedAt: job.startedAt, progress: job.progress ?? null };
+  if (job?.status === 'running') {
+    // Pages finished so far can already be played and followed.
+    const part = job.partial;
+    return {
+      ...base, status: 'running', startedAt: job.startedAt, progress: job.progress ?? null,
+      ...(part ? { pages: part.pages, measureCount: part.measureCount, hasMusicXml: true, partial: true } : {}),
+    };
+  }
   const result = readOmrResult(pdf.stem);
   if (result) {
     return {
@@ -566,19 +575,63 @@ function broadcastOmrState(stem) {
   }
 }
 
-async function startOmrJob(pdf) {
+// Recognition is heavy (Java, ~30–60 s per page), so scores are recognized one at a time.
+// Waiting scores already show as "running" in the room.
+const omrQueue = [];
+let omrBusy = false;
+function startOmrJob(pdf) {
   if (omrJobs[pdf.stem]?.status === 'running') return;
   omrJobs[pdf.stem] = { status: 'running', startedAt: Date.now() };
   broadcastOmrState(pdf.stem);
+  omrQueue.push(pdf);
+  pumpOmrQueue();
+}
+async function pumpOmrQueue() {
+  if (omrBusy) return;
+  const pdf = omrQueue.shift();
+  if (!pdf) return;
+  omrBusy = true;
+  try { await runOmrJob(pdf); } finally { omrBusy = false; pumpOmrQueue(); }
+}
+// New scores are recognized right away in the background, so playback and "Follow me" are
+// usually ready by the time the lesson starts.
+function autoStartOmr(room) {
+  const pdf = room && roomPdfFile(room);
+  if (!pdf || !OMR_ENABLED || !omr.audiverisAvailable()) return;
+  if (fs.existsSync(path.join(OMR_DIR, pdf.stem, 'measures.json'))) return; // already done
+  startOmrJob(pdf);
+}
+
+async function runOmrJob(pdf) {
+  if (omrJobs[pdf.stem]) omrJobs[pdf.stem].startedAt = Date.now();
   const outDir = path.join(OMR_DIR, pdf.stem);
   const workDir = path.join(outDir, 'work');
   try {
     fs.rmSync(workDir, { recursive: true, force: true });
-    const { omrPath, mxlPath } = await omr.runAudiveris(pdf.file, workDir, {
+    const t0 = Date.now();
+    const pageResults = new Map();
+    const { omrPath, mxlPaths } = await omr.runAudiverisFast(pdf.file, workDir, {
       onProgress: (p) => { omrJobs[pdf.stem].progress = p; broadcastOmrState(pdf.stem); },
+      onPageDone: async (k, pageOmr, pageMxls) => {
+        pageResults.set(k, { omrPath: pageOmr, mxlPaths: pageMxls });
+        const part = await omr.partialResult(pageResults);
+        const job = omrJobs[pdf.stem];
+        if (part && job?.status === 'running' && part.measureCount !== job.partial?.measureCount) {
+          job.partial = part;
+          console.log(`OMR ${pdf.stem}: first ${part.pages.length} page(s) ready after ${Math.round((Date.now() - t0) / 1000)} s`);
+          broadcastOmrState(pdf.stem);
+        }
+      },
     });
     const result = await omr.extractMeasures(omrPath);
-    if (mxlPath) fs.copyFileSync(mxlPath, path.join(outDir, 'score.mxl'));
+    if (mxlPaths.length) {
+      fs.copyFileSync(mxlPaths[0], path.join(outDir, 'score.mxl'));
+      // All movements joined, for playback and score following.
+      const xmls = [];
+      for (const f of mxlPaths) xmls.push(await omr.readMusicXml(f));
+      fs.writeFileSync(path.join(outDir, 'score.xml'), omr.mergeMovements(xmls));
+    }
+    console.log(`OMR took ${Math.round((Date.now() - t0) / 1000)} s for ${pdf.stem}`);
     fs.writeFileSync(path.join(outDir, 'measures.json'), JSON.stringify(result));
     fs.rmSync(workDir, { recursive: true, force: true });
     delete omrJobs[pdf.stem];
@@ -597,6 +650,66 @@ app.get('/omr/:roomId/musicxml', (req, res) => {
   if (!file || !fs.existsSync(file)) return res.status(404).json({ error: 'No MusicXML available' });
   const name = (room.scoreName || 'score').replace(/[^\w\- ]+/g, '').trim() || 'score';
   res.download(file, `${name}.mxl`);
+});
+
+// The recognized score as plain MusicXML text, for playback and score following in the browser.
+const scoreXmlCache = new Map(); // stem -> { mtime, xml }
+app.get('/omr/:roomId/score-xml', async (req, res) => {
+  const room = rooms[req.params.roomId];
+  const pdf = room && roomPdfFile(room);
+  // Still recognizing: the pages finished so far.
+  const partial = pdf && omrJobs[pdf.stem]?.status === 'running' && omrJobs[pdf.stem].partial;
+  if (partial) return res.type('application/xml').send(partial.xml);
+  const dir = pdf && path.join(OMR_DIR, pdf.stem);
+  // score.xml = all movements joined (newer results); score.mxl = first movement only (older results)
+  const joined = dir && path.join(dir, 'score.xml');
+  const file = dir && (fs.existsSync(joined) ? joined : path.join(dir, 'score.mxl'));
+  if (!file || !fs.existsSync(file)) return res.status(404).json({ error: 'No recognized score yet' });
+  try {
+    const mtime = fs.statSync(file).mtimeMs;
+    let hit = scoreXmlCache.get(pdf.stem);
+    if (!hit || hit.mtime !== mtime) {
+      hit = { mtime, xml: file.endsWith('.xml') ? fs.readFileSync(file, 'utf8') : await omr.readMusicXml(file) };
+      scoreXmlCache.set(pdf.stem, hit);
+    }
+    res.type('application/xml').send(hit.xml);
+  } catch (err) {
+    res.status(500).json({ error: 'Could not read the recognized score' });
+  }
+});
+
+// ── AI teaching marks ──────────────────────────────────────────────────────
+const ai = require('./ai');
+const aiLastCall = new Map(); // roomId -> time of the last request (one per 30 s per room)
+app.get('/ai/status', (req, res) => res.json({ available: ai.aiAvailable() }));
+app.post('/omr/:roomId/ai-marks', async (req, res) => {
+  const roomId = req.params.roomId;
+  const room = rooms[roomId];
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  const { hostToken, supabaseToken, instrument, lang } = req.body || {};
+  // Only the teacher may ask: each request costs money on the API account.
+  if (!(await requestIsHost(room, hostToken, supabaseToken))) return res.status(403).json({ error: 'Only the host can ask the AI.' });
+  if (!ai.aiAvailable()) return res.status(503).json({ error: 'ai_not_configured', message: 'AI is not set up on this server yet.' });
+  const pdf = roomPdfFile(room);
+  const dir = pdf && path.join(OMR_DIR, pdf.stem);
+  const joined = dir && path.join(dir, 'score.xml');
+  const file = dir && (fs.existsSync(joined) ? joined : path.join(dir, 'score.mxl'));
+  if (!file || !fs.existsSync(file)) return res.status(409).json({ error: 'no_score', message: 'The score has not been recognized yet.' });
+  const last = aiLastCall.get(roomId) || 0;
+  if (Date.now() - last < 30_000) return res.status(429).json({ error: 'rate_limited', message: 'Please wait a moment before asking again.' });
+  aiLastCall.set(roomId, Date.now());
+  try {
+    const xml = file.endsWith('.xml') ? fs.readFileSync(file, 'utf8') : await omr.readMusicXml(file);
+    const marks = await ai.suggestMarks(xml, {
+      instrument: typeof instrument === 'string' ? instrument.slice(0, 20) : undefined,
+      lang: lang === 'zh' ? 'zh' : 'en',
+      scoreName: room.scoreName,
+    });
+    res.json({ marks });
+  } catch (err) {
+    console.error('AI marks error:', err.code || '', err.status || '', err.message);
+    res.status(502).json({ error: err.code || 'ai_error', message: 'The AI could not make suggestions right now. Try again in a minute.' });
+  }
 });
 
 function emitMemberCount(roomId) {
@@ -750,6 +863,7 @@ io.on('connection', (socket) => {
     room.lastActive = new Date().toISOString();
     saveRooms();
     io.to(roomId).emit('score-replaced', { pdfUrl, shapes: room.shapes });
+    autoStartOmr(room);
     io.to(roomId).emit('play-order', { order: null });
     io.to(roomId).emit('omr-state', omrStateFor(room));
     if (oldPdf) removePdfIfUnused(oldPdf);
