@@ -7,6 +7,7 @@ export interface ScoreNote {
   dur: number;        // length in quarter notes
   midi: number;       // MIDI pitch (60 = middle C)
   bar: number;        // bar number, 1-based and sequential through the score (same as the bar boxes)
+  part?: number;      // which part/instrument (index into ScoreModel.parts)
 }
 export interface ScoreBar { n: number; beat: number; beats: number }
 export interface ScoreModel {
@@ -14,6 +15,7 @@ export interface ScoreModel {
   bars: ScoreBar[];
   tempo: number | null;   // quarter notes per minute, if the score says
   totalBeats: number;
+  parts?: string[];       // part names (e.g. "Cello", "Piano"), when known
 }
 
 const STEP: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -51,7 +53,14 @@ export function parseMusicXml(xml: string): ScoreModel {
   const barsByIndex: ScoreBar[] = [];
   let tempo: number | null = null;
 
+  const partNames = new Map<string, string>();
+  for (const sp of Array.from(doc.querySelectorAll('part-list > score-part'))) {
+    partNames.set(sp.getAttribute('id') ?? '', sp.querySelector('part-name')?.textContent?.trim() || '');
+  }
+  const parts: string[] = [];
   for (const part of Array.from(doc.querySelectorAll('score-partwise > part'))) {
+    const partIndex = parts.length;
+    parts.push(partNames.get(part.getAttribute('id') ?? '') || `Part ${partIndex + 1}`);
     let divisions = 1;
     let beatsPerBar = 4;
     let barStart = 0;
@@ -101,7 +110,7 @@ export function parseMusicXml(xml: string): ScoreModel {
             if (!ties.includes('start')) tied.delete(midi);
             continue;
           }
-          const note: ScoreNote = { beat, dur, midi, bar: i + 1 };
+          const note: ScoreNote = { beat, dur, midi, bar: i + 1, part: partIndex };
           notes.push(note);
           if (ties.includes('start')) tied.set(midi, note);
         }
@@ -118,7 +127,7 @@ export function parseMusicXml(xml: string): ScoreModel {
   notes.sort((a, b) => a.beat - b.beat || a.midi - b.midi);
   const bars = barsByIndex.filter(Boolean);
   const last = bars[bars.length - 1];
-  return { notes, bars, tempo, totalBeats: last ? last.beat + last.beats : 0 };
+  return { notes, bars, tempo, totalBeats: last ? last.beat + last.beats : 0, parts };
 }
 
 export function midiToFreq(midi: number) { return 440 * Math.pow(2, (midi - 69) / 12); }

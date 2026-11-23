@@ -18,6 +18,8 @@ export class ScorePlayer {
 
   tempo = 80;                // quarter notes per minute
   instrument: Instrument = 'piano';
+  mutedParts = new Set<number>();          // accompaniment: the student's part is silent
+  loop: { from: number; to: number } | null = null; // beats; playback repeats this range
   playing = false;
   onBar: (bar: number) => void = () => {};
   onEnd: () => void = () => {};
@@ -29,7 +31,10 @@ export class ScorePlayer {
   /** Current position in beats (while playing). */
   currentBeat(): number {
     if (!this.playing || !this.ctx) return this.startBeat;
-    return this.startBeat + (this.ctx.currentTime - this.startTime) * this.tempo / 60;
+    const b = this.startBeat + (this.ctx.currentTime - this.startTime) * this.tempo / 60;
+    // The loop restart is scheduled slightly ahead; until then we are still at the end of the range.
+    if (this.loop && b < this.loop.from) return this.loop.to - (this.loop.from - b);
+    return b;
   }
 
   /** Start at a bar (1-based) or at a beat. */
@@ -57,10 +62,18 @@ export class ScorePlayer {
       const beat = this.currentBeat();
       const bar = this.barAt(beat);
       if (bar !== this.lastBar && bar > 0) { this.lastBar = bar; this.onBar(bar); }
-      if (beat >= this.score.totalBeats + 0.25) { this.stop(); this.onEnd(); return; }
+      if (!this.loop && beat >= this.score.totalBeats + 0.25) { this.stop(); this.onEnd(); return; }
       this.raf = requestAnimationFrame(tick);
     };
     this.raf = requestAnimationFrame(tick);
+  }
+
+  /** Loop bars from..to (inclusive, 1-based), or null to stop looping. */
+  setLoopBars(range: { from: number; to: number } | null) {
+    if (!range) { this.loop = null; return; }
+    const a = this.score.bars.find(b => b.n === Math.min(range.from, range.to));
+    const z = this.score.bars.find(b => b.n === Math.max(range.from, range.to));
+    this.loop = a && z ? { from: a.beat, to: z.beat + z.beats } : null;
   }
 
   playFromBar(bar: number) {
@@ -110,11 +123,24 @@ export class ScorePlayer {
     const horizon = ctx.currentTime + 0.2;
     const secPerBeat = 60 / this.tempo;
     const notes = this.score.notes;
-    while (this.nextIndex < notes.length) {
+    while (true) {
+      // Loop: at the end of the range, continue from its start (seamlessly, ahead of time).
+      if (this.loop && (this.nextIndex >= notes.length || notes[this.nextIndex].beat >= this.loop.to - 1e-6)) {
+        const len = this.loop.to - this.loop.from;
+        if (len <= 0) break;
+        const loopEndTime = this.startTime + (this.loop.to - this.startBeat) * secPerBeat;
+        if (loopEndTime > horizon) break;
+        this.startTime = loopEndTime;
+        this.startBeat = this.loop.from;
+        this.nextIndex = notes.findIndex(x => x.beat >= this.loop!.from - 1e-6);
+        if (this.nextIndex < 0) break;
+        continue;
+      }
+      if (this.nextIndex >= notes.length) break;
       const n = notes[this.nextIndex];
       const t = this.startTime + (n.beat - this.startBeat) * secPerBeat;
       if (t > horizon) break;
-      if (t >= ctx.currentTime - 0.02) this.voice(n.midi, t, Math.max(0.06, n.dur * secPerBeat));
+      if (t >= ctx.currentTime - 0.02 && !this.mutedParts.has(n.part ?? 0)) this.voice(n.midi, t, Math.max(0.06, n.dur * secPerBeat));
       this.nextIndex++;
     }
     this.voices = this.voices.filter(v => v.end > ctx.currentTime);

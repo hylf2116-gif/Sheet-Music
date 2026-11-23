@@ -328,6 +328,29 @@ app.post('/create-room', createRoomLimit, async (req, res) => {
   res.json({ roomId, hostToken });
 });
 
+// New-user tutorial: a room with Unino's own practice score (assets/demo-score.pdf, no copyright),
+// so a new teacher can try everything before uploading their own music.
+app.post('/demo-room', createRoomLimit, async (req, res) => {
+  const { clientId, supabaseToken } = req.body || {};
+  const src = path.join(__dirname, 'assets', 'demo-score.pdf');
+  if (!fs.existsSync(src)) return res.status(500).json({ error: 'Practice score missing on the server' });
+  const file = `${uuidv4()}.pdf`;
+  fs.copyFileSync(src, path.join(UPLOADS_DIR, file));
+  const roomId = uuidv4();
+  const hostToken = crypto.randomBytes(32).toString('hex');
+  let hostUserId = null;
+  if (supabaseToken) { try { hostUserId = await verifySupabaseToken(supabaseToken); } catch {} }
+  rooms[roomId] = {
+    shapes: [], messages: [], pdfUrl: `/uploads/${file}`, scoreName: 'Practice Score',
+    currentPage: 0, hostId: null, hostSockets: new Set(), raisedHands: [], creatorId: null,
+    hostTokenHash: hashToken(hostToken), hostClientId: typeof clientId === 'string' ? clientId : null, hostUserId,
+    colorMode: 'free', personColors: {}, practice: true,
+    createdAt: new Date().toISOString(), lastActive: new Date().toISOString(),
+  };
+  saveRooms();
+  res.json({ roomId, hostToken, pdfUrl: `/uploads/${file}`, scoreName: 'Practice Score' });
+});
+
 app.post('/upload', uploadLimit, (req, res, next) => {
   // Turn multer errors (too large, not a PDF) into clear JSON instead of an HTML error page.
   upload.single('pdf')(req, res, (err) => {
@@ -542,9 +565,17 @@ function readOmrResult(stem) {
 }
 
 // Public OMR state for a room (sent to clients).
+// A MusicXML/MIDI file the teacher added for playback (more exact than recognition).
+function importedScoreInfo(stem) {
+  try {
+    const info = JSON.parse(fs.readFileSync(path.join(OMR_DIR, stem, 'import.json'), 'utf8'));
+    return { name: info.name, kind: info.kind };
+  } catch { return null; }
+}
+
 function omrStateFor(room) {
   const pdf = roomPdfFile(room);
-  const base = { highlightedMeasure: room.highlightedMeasure ?? null };
+  const base = { highlightedMeasure: room.highlightedMeasure ?? null, imported: pdf ? importedScoreInfo(pdf.stem) : null };
   if (!pdf) return { ...base, status: 'unavailable', reason: 'PDF file not found on server' };
   const job = omrJobs[pdf.stem];
   if (job?.status === 'running') {
@@ -559,6 +590,7 @@ function omrStateFor(room) {
   if (result) {
     return {
       ...base, status: 'done', pages: result.pages, measureCount: result.measureCount,
+      confirmed: !!result.confirmed,
       hasMusicXml: fs.existsSync(path.join(OMR_DIR, pdf.stem, 'score.mxl')),
     };
   }
@@ -676,6 +708,111 @@ app.get('/omr/:roomId/score-xml', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'Could not read the recognized score' });
   }
+});
+
+// ── Teacher-confirmed bars (Phase 4: recognition suggests, a person confirms) ──
+// Body: { hostToken | supabaseToken, pages: [{ page, measures: [{ x, y, w, h }] }] }
+// Bars are renumbered in reading order (page, then line, then left to right).
+app.post('/omr/:roomId/measures', async (req, res) => {
+  const room = rooms[req.params.roomId];
+  const pdf = room && roomPdfFile(room);
+  if (!pdf) return res.status(404).json({ error: 'Room not found' });
+  const { hostToken, supabaseToken, pages } = req.body || {};
+  if (!(await requestIsHost(room, hostToken, supabaseToken))) return res.status(403).json({ error: 'Only the host can confirm bars.' });
+  if (omrJobs[pdf.stem]?.status === 'running') return res.status(409).json({ error: 'Recognition is still running.' });
+  const old = readOmrResult(pdf.stem);
+  if (!old) return res.status(409).json({ error: 'There are no bars to confirm yet.' });
+  if (!Array.isArray(pages) || pages.length > 2000) return res.status(400).json({ error: 'Bad bar data' });
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : null);
+  const clean = [];
+  let n = 0;
+  for (const pg of [...pages].sort((a, b) => a.page - b.page)) {
+    if (!Number.isInteger(pg?.page) || pg.page < 0 || !Array.isArray(pg.measures)) return res.status(400).json({ error: 'Bad bar data' });
+    const ms = [];
+    for (const m of pg.measures) {
+      const x = num(m?.x), y = num(m?.y), w = num(m?.w), h = num(m?.h);
+      if (x == null || y == null || !(w > 0.002) || !(h > 0.002)) return res.status(400).json({ error: 'Bad bar data' });
+      ms.push({ x, y, w, h });
+    }
+    // reading order: lines top to bottom (boxes on the same line share about the same top), left to right
+    ms.sort((a, b) => (Math.abs(a.y - b.y) < Math.min(a.h, b.h) * 0.5 ? a.x - b.x : a.y - b.y));
+    const oldPage = old.pages.find((op) => op.page === pg.page);
+    clean.push({ page: pg.page, ...(oldPage?.staffHeight ? { staffHeight: oldPage.staffHeight } : {}), measures: ms.map((m) => ({ n: ++n, ...m })) });
+  }
+  const result = { pages: clean, measureCount: n, confirmed: true, confirmedAt: new Date().toISOString() };
+  const file = path.join(OMR_DIR, pdf.stem, 'measures.json');
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify(result));
+  fs.renameSync(`${file}.tmp`, file);
+  broadcastOmrState(pdf.stem);
+  res.json({ ok: true, measureCount: n });
+});
+
+// ── Imported MusicXML / MIDI (Phase 2: accompaniment and demo playback) ───────
+const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+app.post('/omr/:roomId/import', (req, res, next) => {
+  importUpload.single('score')(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'This file is larger than 10 MB.' });
+    return res.status(400).json({ error: 'Upload failed.' });
+  });
+}, async (req, res) => {
+  const room = rooms[req.params.roomId];
+  const pdf = room && roomPdfFile(room);
+  if (!pdf) return res.status(404).json({ error: 'Room not found' });
+  const { hostToken, supabaseToken } = req.body || {};
+  if (!(await requestIsHost(room, hostToken, supabaseToken))) return res.status(403).json({ error: 'Only the host can add a score file.' });
+  const f = req.file;
+  if (!f) return res.status(400).json({ error: 'No file uploaded' });
+  const name = String(f.originalname || 'score').slice(0, 120);
+  const dir = path.join(OMR_DIR, pdf.stem);
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    let kind, out;
+    const head = f.buffer.subarray(0, 4).toString('latin1');
+    if (head === 'MThd') {
+      kind = 'midi'; out = 'import.mid';
+      fs.writeFileSync(path.join(dir, out), f.buffer);
+    } else {
+      // .mxl is a zip (starts with PK); .musicxml/.xml is plain text
+      let xml;
+      if (head.startsWith('PK')) {
+        const tmp = path.join(dir, `upload-${Date.now()}.mxl`);
+        fs.writeFileSync(tmp, f.buffer);
+        try { xml = await omr.readMusicXml(tmp); } finally { fs.rmSync(tmp, { force: true }); }
+      } else {
+        xml = f.buffer.toString('utf8');
+      }
+      if (/<score-timewise[\s>]/.test(xml)) return res.status(400).json({ error: 'This MusicXML layout (timewise) is not supported. Export it as "partwise" MusicXML.' });
+      if (!/<score-partwise[\s>]/.test(xml)) return res.status(400).json({ error: 'This is not a MusicXML or MIDI file.' });
+      kind = 'musicxml'; out = 'import.xml';
+      fs.writeFileSync(path.join(dir, out), xml);
+    }
+    for (const old of ['import.mid', 'import.xml']) if (old !== out) fs.rmSync(path.join(dir, old), { force: true });
+    fs.writeFileSync(path.join(dir, 'import.json'), JSON.stringify({ name, kind, file: out, addedAt: new Date().toISOString() }));
+    broadcastOmrState(pdf.stem);
+    res.json({ ok: true, name, kind });
+  } catch (err) {
+    console.error('Import failed:', err.message);
+    res.status(400).json({ error: 'Could not read this file.' });
+  }
+});
+app.get('/omr/:roomId/import', (req, res) => {
+  const room = rooms[req.params.roomId];
+  const pdf = room && roomPdfFile(room);
+  const info = pdf && (() => { try { return JSON.parse(fs.readFileSync(path.join(OMR_DIR, pdf.stem, 'import.json'), 'utf8')); } catch { return null; } })();
+  if (!info) return res.status(404).json({ error: 'No imported score' });
+  res.type(info.kind === 'midi' ? 'audio/midi' : 'application/xml');
+  res.sendFile(path.join(OMR_DIR, pdf.stem, info.file));
+});
+app.post('/omr/:roomId/import/remove', async (req, res) => {
+  const room = rooms[req.params.roomId];
+  const pdf = room && roomPdfFile(room);
+  if (!pdf) return res.status(404).json({ error: 'Room not found' });
+  const { hostToken, supabaseToken } = req.body || {};
+  if (!(await requestIsHost(room, hostToken, supabaseToken))) return res.status(403).json({ error: 'Only the host can remove the score file.' });
+  for (const f of ['import.json', 'import.mid', 'import.xml']) fs.rmSync(path.join(OMR_DIR, pdf.stem, f), { force: true });
+  broadcastOmrState(pdf.stem);
+  res.json({ ok: true });
 });
 
 // ── AI teaching marks ──────────────────────────────────────────────────────
