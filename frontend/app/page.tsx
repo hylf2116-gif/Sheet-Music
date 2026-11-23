@@ -37,6 +37,9 @@ import OMRPanel, { type OmrState, type OmrPrefs, type OmrMeasure, DEFAULT_OMR_PR
 import { useT, type TFunc } from '../lib/i18n';
 import { LogoMark } from './Logo';
 import PlaybackBar from './PlaybackBar';
+import FirstTimeGuide from './FirstTimeGuide';
+import Tour, { type TourStep } from './Tour';
+import type { BarBox } from './PDFViewer';
 import { TEMPLATES, DEFAULT_TEXT_STYLE, type TextStyle } from '../lib/annotationStyle';
 
 const OMR_PREFS_KEY = 'unino_omr_prefs';
@@ -426,6 +429,64 @@ export default function Home() {
     }
     return false;
   }
+  // ── Checking bars (Phase 4): recognition suggests, the teacher confirms ──
+  const [barDraft, setBarDraft] = useState<{ page: number; measures: BarBox[] }[] | null>(null);
+  const [barSel, setBarSel] = useState<{ page: number; i: number } | null>(null);
+  const [barSplit, setBarSplit] = useState(false);
+  const [barMsg, setBarMsg] = useState('');
+  function startBarCheck() {
+    const pages = omrStateRef.current?.pages;
+    if (!pages) return;
+    setBarDraft(pages.map(pg => ({ page: pg.page, measures: pg.measures.map(m => ({ x: m.x, y: m.y, w: m.w, h: m.h })) })));
+    setBarSel(null); setBarSplit(false); setBarMsg('');
+  }
+  function editPage(page: number, fn: (ms: BarBox[]) => BarBox[]) {
+    setBarDraft(d => d && d.map(pg => (pg.page === page ? { ...pg, measures: fn(pg.measures) } : pg)));
+  }
+  function splitBar(page: number, i: number, x: number) {
+    editPage(page, ms => {
+      const m = ms[i];
+      if (x <= m.x + 0.01 || x >= m.x + m.w - 0.01) return ms;
+      return [...ms.slice(0, i), { ...m, w: x - m.x }, { ...m, x, w: m.x + m.w - x }, ...ms.slice(i + 1)];
+    });
+    setBarSplit(false); setBarSel({ page, i });
+  }
+  function mergeBarWithNext() {
+    if (!barSel) return;
+    const { page, i } = barSel;
+    editPage(page, ms => {
+      if (i + 1 >= ms.length) return ms;
+      const a = ms[i], b = ms[i + 1];
+      if (Math.abs(a.y - b.y) > Math.min(a.h, b.h) * 0.5) return ms; // different lines: don't merge
+      const x = Math.min(a.x, b.x), r = Math.max(a.x + a.w, b.x + b.w);
+      return [...ms.slice(0, i), { ...a, x, w: r - x }, ...ms.slice(i + 2)];
+    });
+  }
+  function deleteBar() {
+    if (!barSel) return;
+    editPage(barSel.page, ms => ms.filter((_, k) => k !== barSel.i));
+    setBarSel(null);
+  }
+  async function confirmBars() {
+    if (!barDraft) return;
+    setBarMsg(t('Saving…'));
+    let hostToken: string | null = null;
+    try { hostToken = localStorage.getItem(`unino_host_${roomId}`); } catch {}
+    let supabaseToken: string | null = null;
+    if (!hostToken && supabase) { try { const { data } = await supabase.auth.getSession(); supabaseToken = data.session?.access_token ?? null; } catch {} }
+    try {
+      const res = await fetch(backendUrl(`/omr/${roomId}/measures`), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hostToken, supabaseToken, pages: barDraft }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setBarMsg(t(data.error || 'Could not save.')); return; }
+      setBarDraft(null); setBarSel(null); setBarMsg('');
+      addToast(t('{n} bars confirmed', { n: data.measureCount }));
+    } catch { setBarMsg(t('Could not reach our server. Check your connection.')); }
+  }
+  const barDraftCount = barDraft ? barDraft.reduce((s, pg) => s + pg.measures.length, 0) : 0;
+
   // Playback of the recognized score: the bar being played (local to this device).
   const [playingBar, setPlayingBar] = useState<number | null>(null);
   const lastPlayedLineRef = useRef<string>('');
@@ -622,6 +683,67 @@ export default function Home() {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   const [user, setUser] = useState<User | null>(null);
+
+  // ── New-user tutorial (after the first sign-in): home → practice room → done ──
+  // Stored per account on this device: unset = not started, 'room' = in the practice room, 'done'.
+  const [tutorial, setTutorial] = useState<'home' | 'room' | null>(null);
+  const tutorialKey = (uid: string) => `unino_tutorial_${uid}`;
+  // Signed out, the tutorial only runs when asked for (?tour=1), and is remembered for this device.
+  function saveTutorial(v: 'room' | 'done') {
+    try { localStorage.setItem(tutorialKey(user?.id ?? 'device'), v); } catch {}
+  }
+  useEffect(() => {
+    let v: string | null = null;
+    try { v = localStorage.getItem(tutorialKey(user?.id ?? 'device')); } catch {}
+    const asked = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tour') === '1';
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- follows sign-in state and the ?tour=1 link
+    if (asked) { setTutorial('home'); return; }
+    if (!user) { setTutorial(v === 'room' ? 'room' : null); return; }
+    setTutorial(v === 'done' ? null : v === 'room' ? 'room' : 'home');
+  }, [user]);
+  function endTutorial() { saveTutorial('done'); setTutorial(null); }
+  async function openPracticeRoom() {
+    let supabaseToken: string | null = null;
+    if (supabase) { try { const { data } = await supabase.auth.getSession(); supabaseToken = data.session?.access_token ?? null; } catch {} }
+    try {
+      const res = await fetch(backendUrl('/demo-room'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: myClientId, supabaseToken }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      try { localStorage.setItem(`unino_host_${data.roomId}`, data.hostToken); localStorage.setItem('unino_guide_done', '1'); } catch {}
+      saveTutorial('room');
+      setTutorial('room');
+      joinRoom(data.roomId);
+    } catch { alert(t('Could not open the practice score. Try again.')); }
+  }
+  // Counts my marks, so the "draw a line" step knows when I did it.
+  const myMarksRef = useRef(0);
+  useEffect(() => { myMarksRef.current = annotations.filter(a => a.ownerId === myClientId).length; });
+  const drawStartRef = useRef<number | null>(null);
+  const homeTutorialSteps: TourStep[] = [
+    { title: t('Welcome to Unino'), body: t('In about a minute we’ll walk through a lesson together on a practice score: draw, write, share with a student, turn pages.') },
+    { target: 'upload', title: t('Lessons start with a score'), hideBack: false,
+      body: t('Later you’ll upload your own PDF here. For now, try everything on a practice score. Nothing you do there matters.'),
+      action: { label: t('Open practice score'), run: openPracticeRoom } },
+  ];
+  const roomTutorialSteps: TourStep[] = [
+    { target: 'draw', title: t('Draw a line on the score'), hideBack: true,
+      body: t('The pen is already selected. Circle a note or draw anywhere on the music.'),
+      waitFor: () => { if (drawStartRef.current == null) drawStartRef.current = myMarksRef.current; return myMarksRef.current > drawStartRef.current; },
+      doneText: t('Nice! A student in this room sees that the moment you draw it.') },
+    { target: 'text', title: t('Write words, symbols or ready-made marks'),
+      body: t('Next to the pen: text (bold, colors, Chinese), arrows, music symbols, and templates like “Practice here ×3” in one tap.') },
+    { target: 'share', title: t('Invite your student'),
+      body: t('Share copies a link. Your student opens it in any browser, phone or iPad, no app or account, and you both draw on the same score live.') },
+    { target: 'nav', title: t('Turn pages and zoom'),
+      body: t('Your student follows your page turns automatically. Zoom with these buttons or a pinch; it only changes your own view.') },
+    { title: t('You’re ready to teach'),
+      body: t('This practice score stays in My Scores. Next, upload a real score and send the link to a student.'),
+      action: { label: t('Upload my own score'), run: () => { endTutorial(); goHomeRef.current(); } } },
+  ];
+
   const [authLoading, setAuthLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -1748,7 +1870,7 @@ export default function Home() {
                   <p className="text-sm leading-relaxed" style={{ color: 'var(--t2)' }}>{t('Upload a PDF score and create a room. Share the link with anyone to collaborate.')}</p>
                 </div>
                 <ColorModePicker value={newRoomColorMode} onChange={chooseNewRoomColorMode} />
-                <label className={`w-full py-3 text-sm font-semibold text-center cursor-pointer transition-colors ${loading ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
+                <label data-tour="upload" className={`w-full py-3 text-sm font-semibold text-center cursor-pointer transition-colors ${loading ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
                   style={{ borderRadius: 'var(--r-md)' }}>
                   {loading ? t('Uploading…') : t('+ Upload Score')}
                   <input type="file" accept=".pdf" onChange={handleUpload} className="hidden" disabled={loading} />
@@ -1852,6 +1974,7 @@ export default function Home() {
             onSignOut={handleSignOut}
           />
         )}
+        {tutorial === 'home' && <Tour steps={homeTutorialSteps} onClose={endTutorial} />}
       </div>
     );
   }
@@ -1984,7 +2107,12 @@ export default function Home() {
               measuresByPage={measuresByPage}
               showMeasureNumbers={omrPrefs.showNumbers}
               highlightedMeasure={playingBar ?? (omrPrefs.showHighlight ? (omrState?.highlightedMeasure ?? null) : null)}
-              measureClickMode={omrPrefs.clickToHighlight && !!measuresByPage}
+              measureClickMode={omrPrefs.clickToHighlight && !!measuresByPage && !barDraft}
+              barEdit={barDraft ? {
+                pages: barDraft, selected: barSel, splitMode: barSplit,
+                onSelect: setBarSel, onSplit: splitBar,
+                onResize: (page, i, box) => editPage(page, ms => ms.map((m, k) => (k === i ? box : m))),
+              } : null}
               onMeasureClick={handleMeasureClick}
               measureJump={measureJump}
               activeSymbol={activeSymbol}
@@ -2170,13 +2298,49 @@ export default function Home() {
         />
       )}
 
+      {/* First visit on this device: 3-step guide (draw, share, pages/zoom) */}
+      {roomId && tutorial !== 'room' && <FirstTimeGuide isHost={isHost} ready={!showNicknameModal && numPages > 0 && !!nickname} />}
+      {roomId && tutorial === 'room' && isHost && !showNicknameModal && numPages > 0 && !!nickname && (
+        <Tour steps={roomTutorialSteps} onClose={endTutorial} />
+      )}
+
+      {/* Checking bars: what the teacher can do, and Confirm */}
+      {barDraft && (
+        <div className="fixed left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 px-3 py-2 rounded-2xl shadow-xl text-white flex-wrap justify-center"
+          style={{ top: 72, background: 'rgba(49,46,129,0.95)', maxWidth: 'calc(100vw - 24px)' }}>
+          <span className="text-[12px] font-semibold mr-1 whitespace-nowrap">{t('Checking bars: {n}', { n: barDraftCount })}</span>
+          <span className="text-[11px] text-white/70 mr-2 hidden sm:inline">
+            {barSplit ? t('Click where the missing bar line is') : barSel ? t('Drag the edges, or:') : t('Click a bar to fix it')}
+          </span>
+          {[
+            { label: barSplit ? t('Cancel split') : t('Split'), on: () => setBarSplit(s => !s), disabled: false, active: barSplit },
+            { label: t('Merge with next'), on: mergeBarWithNext, disabled: !barSel },
+            { label: t('Delete'), on: deleteBar, disabled: !barSel },
+          ].map(b => (
+            <button key={b.label} onClick={b.on} disabled={b.disabled}
+              className={`h-8 px-3 rounded-full text-[12px] font-semibold disabled:opacity-35 ${b.active ? 'bg-amber-300 text-gray-900' : 'bg-white/15 hover:bg-white/25'}`}>
+              {b.label}
+            </button>
+          ))}
+          <span className="w-px h-5 bg-white/25 mx-1" />
+          <button onClick={() => { setBarDraft(null); setBarSel(null); setBarSplit(false); }}
+            className="h-8 px-3 rounded-full text-[12px] bg-white/10 hover:bg-white/20">{t('Cancel')}</button>
+          <button onClick={confirmBars}
+            className="h-8 px-4 rounded-full text-[12px] font-bold bg-white text-indigo-900 hover:bg-indigo-50">{t('Confirm {n} bars', { n: barDraftCount })}</button>
+          {barMsg && <span className="text-[11px] text-amber-200 ml-1">{barMsg}</span>}
+        </div>
+      )}
+
       {/* Playback of the recognized score (above the page bar) */}
-      {roomId && omrState?.hasMusicXml && (omrState.status === 'done' || omrState.partial) && (
+      {roomId && (isHost || omrState?.imported || (omrState?.hasMusicXml && (omrState.status === 'done' || omrState.partial))) && (
         <div className="fixed left-1/2 -translate-x-1/2 z-40" style={{ bottom: 64 }}>
-          <PlaybackBar roomId={roomId} ready
-            version={`${omrState.status}:${omrState.measureCount ?? 0}`}
-            partial={!!omrState.partial}
-            startBar={omrState.highlightedMeasure ?? null}
+          <PlaybackBar roomId={roomId}
+            ready={!!omrState?.hasMusicXml && (omrState.status === 'done' || !!omrState.partial)}
+            version={`${omrState?.status}:${omrState?.measureCount ?? 0}`}
+            partial={!!omrState?.partial}
+            imported={omrState?.imported ?? null}
+            barBoxCount={omrState?.measureCount}
+            startBar={omrState?.highlightedMeasure ?? null}
             onBar={b => { setPlayingBar(b); if (b == null) lastPlayedLineRef.current = ''; }}
             keepInView={keepBarInView}
             onMarkOffNotes={markOffNotes}
@@ -2243,6 +2407,7 @@ export default function Home() {
           onJump={handleMeasureJump}
           onClearHighlight={() => setHighlightedMeasure(null)}
           onClose={() => setOmrOpen(false)}
+          onCheckBars={startBarCheck}
         />
       )}
 

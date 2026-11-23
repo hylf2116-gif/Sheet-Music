@@ -192,7 +192,7 @@ export default function Toolbar(p: ToolbarProps) {
 
     if (p.pos !== 'top') {
       return (
-        <button onClick={() => p.setActiveTool(id)} title={label}
+        <button onClick={() => p.setActiveTool(id)} title={label} data-tour={id === 'pen' ? 'draw' : id === 'text' ? 'text' : undefined}
           className={`flex flex-col items-center gap-0.5 py-1.5 px-0.5 rounded-xl w-full ${base} ${
             laser  ? active ? 'bg-red-50 text-red-500' : 'text-gray-400 hover:bg-red-50 hover:text-red-400'
                    : active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-400 hover:bg-black/[0.04] hover:text-gray-700'
@@ -203,7 +203,7 @@ export default function Toolbar(p: ToolbarProps) {
       );
     }
     return (
-      <button onClick={() => p.setActiveTool(id)} title={label} aria-label={label}
+      <button onClick={() => p.setActiveTool(id)} title={label} aria-label={label} data-tour={id === 'pen' ? 'draw' : id === 'text' ? 'text' : undefined}
         className={`${p.compact ? 'w-10 h-10' : 'w-9 h-9'} rounded-lg shrink-0 ${base} ${
           laser  ? active ? 'bg-red-50 text-red-500' : 'text-gray-500 hover:bg-red-50 hover:text-red-500'
                  : active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-800'
@@ -617,7 +617,7 @@ export default function Toolbar(p: ToolbarProps) {
               ✋{p.handRaised ? ' ' + t('Lower') : ''}
             </button>
           )}
-          <button onClick={p.onCopyLink} aria-label={t('Copy share link')}
+          <button data-tour="share" onClick={p.onCopyLink} aria-label={t('Copy share link')}
             className={`flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-medium shrink-0 ${
               p.copied ? 'bg-green-500 text-white' : 'bg-gray-900 text-white'
             }`}>
@@ -745,7 +745,7 @@ export default function Toolbar(p: ToolbarProps) {
 
             <div className="w-px h-4 bg-black/[0.08] mx-1 shrink-0" />
 
-            <button onClick={p.onCopyLink}
+            <button data-tour="share" onClick={p.onCopyLink}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-medium transition-colors shrink-0 ${
                 p.copied ? 'bg-green-500 text-white' : 'bg-gray-900 text-white hover:bg-gray-700'
               }`}>
@@ -959,7 +959,7 @@ export default function Toolbar(p: ToolbarProps) {
       {/* Footer */}
       <div className="shrink-0 px-3 py-3 flex items-center gap-2"
         style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-        <button onClick={p.onCopyLink}
+        <button data-tour="share" onClick={p.onCopyLink}
           className={`flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-xs font-semibold transition-colors ${
             p.copied ? 'bg-green-500 text-white' : 'bg-gray-900 text-white hover:bg-gray-700'
           }`}>
