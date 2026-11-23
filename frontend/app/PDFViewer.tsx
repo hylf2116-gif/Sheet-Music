@@ -64,6 +64,18 @@ interface Props {
   templatePreview?: (x: number, y: number) => any[];
   // Tells the toolbar which mark is selected (so text style buttons can change it)
   onSelectionChange?: (ann: any | null) => void;
+  // Checking bars (teacher): editable bar boxes instead of drawing
+  barEdit?: BarEditProps | null;
+}
+
+export interface BarBox { x: number; y: number; w: number; h: number }
+export interface BarEditProps {
+  pages: { page: number; measures: BarBox[] }[];
+  selected: { page: number; i: number } | null;
+  splitMode: boolean;
+  onSelect: (sel: { page: number; i: number } | null) => void;
+  onSplit: (page: number, i: number, x: number) => void;
+  onResize: (page: number, i: number, box: BarBox) => void;
 }
 
 const ZOOM_MIN = 0.5, ZOOM_MAX = 4;
@@ -257,7 +269,7 @@ export default function PDFViewer({
   measuresByPage, showMeasureNumbers, highlightedMeasure, measureClickMode, onMeasureClick, measureJump,
   activeSymbol, symbolEmForPage, onSymbolPlaced, onSymbolMenu, onExitSymbolTool,
   onEraseStart, onEraseEnd, onUserScroll, onStepPage, navLabel,
-  arrowStyle = 'end', textStyle = DEFAULT_TEXT_STYLE, onStampTemplate, templatePreview, onSelectionChange,
+  arrowStyle = 'end', textStyle = DEFAULT_TEXT_STYLE, onStampTemplate, templatePreview, onSelectionChange, barEdit,
 }: Props) {
   const t = useT();
   // Use stable clientId for ownership checks; fall back to socketId for legacy callers.
@@ -1108,6 +1120,11 @@ export default function PDFViewer({
 
   function onPointerDown(e: React.PointerEvent, pageIndex: number) {
     if (e.button !== 0) return;
+    if (barEdit) {
+      // Checking bars: a click on empty paper clears the selection; boxes handle their own clicks.
+      if (e.target === e.currentTarget) barEdit.onSelect(null);
+      return;
+    }
     const panning = handlePanDown(e);
     // Touch long-press (iPad) opens the symbol menu at that spot, from any tool. This also works
     // after the Pencil has been used, when a single finger otherwise only scrolls.
@@ -1616,6 +1633,59 @@ export default function PDFViewer({
                     opacity={0.4} style={{ pointerEvents: 'none' }} />;
                 })()}
 
+                {/* Checking bars: numbered boxes, select / split / drag edges */}
+                {barEdit && (() => {
+                  const pg = barEdit.pages.find(pp => pp.page === pageIndex);
+                  if (!pg) return null;
+                  let before = 0;
+                  for (const pp of barEdit.pages) if (pp.page < pageIndex) before += pp.measures.length;
+                  return (
+                    <g>
+                      {pg.measures.map((m, i) => {
+                        const sel = barEdit.selected?.page === pageIndex && barEdit.selected.i === i;
+                        const startDrag = (e: React.PointerEvent, edge: 'l' | 'r') => {
+                          e.stopPropagation();
+                          const svg = svgRefs.current[pageIndex];
+                          if (!svg) return;
+                          const move = (ev: PointerEvent) => {
+                            const r = svg.getBoundingClientRect();
+                            const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+                            const right = m.x + m.w;
+                            if (edge === 'l') { const nx = Math.min(x, right - 0.01); barEdit.onResize(pageIndex, i, { ...m, x: nx, w: right - nx }); }
+                            else { const nr = Math.max(x, m.x + 0.01); barEdit.onResize(pageIndex, i, { ...m, w: nr - m.x }); }
+                          };
+                          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+                          window.addEventListener('pointermove', move);
+                          window.addEventListener('pointerup', up);
+                        };
+                        return (
+                          <g key={i}>
+                            <rect x={m.x} y={m.y} width={m.w} height={m.h}
+                              fill={sel ? 'rgba(99,102,241,0.16)' : 'rgba(99,102,241,0.05)'}
+                              stroke={sel ? '#4f46e5' : '#818cf8'} strokeWidth={sel ? 2.5 : 1.2}
+                              strokeDasharray={sel ? undefined : '4 3'} vectorEffect="non-scaling-stroke"
+                              style={{ cursor: barEdit.splitMode ? 'col-resize' : 'pointer' }}
+                              onPointerDown={e => {
+                                e.stopPropagation();
+                                if (barEdit.splitMode) {
+                                  const r = svgRefs.current[pageIndex]!.getBoundingClientRect();
+                                  barEdit.onSplit(pageIndex, i, (e.clientX - r.left) / r.width);
+                                } else barEdit.onSelect({ page: pageIndex, i });
+                              }} />
+                            <text x={m.x + 0.004} y={m.y + 0.016} fontSize={0.013} fontWeight={700} fill="#4338ca"
+                              style={{ pointerEvents: 'none' }}>{before + i + 1}</text>
+                            {sel && !barEdit.splitMode && (['l', 'r'] as const).map(edge => (
+                              <rect key={edge} x={(edge === 'l' ? m.x : m.x + m.w) - 0.006} y={m.y} width={0.012} height={m.h}
+                                fill="#4f46e5" opacity={0.85} rx={0.003} style={{ cursor: 'ew-resize' }}
+                                onPointerDown={e => startDrag(e, edge)} />
+                            ))}
+                          </g>
+                        );
+                      })}
+                    </g>
+                  );
+                })()}
+
                 {/* Templates tool: the marks it will place, faded, following the cursor */}
                 {activeTool === 'template' && templatePreview && symbolCursor?.page === pageIndex && (
                   <g opacity={0.45} style={{ pointerEvents: 'none' }}>
@@ -1706,7 +1776,7 @@ export default function PDFViewer({
 
       {/* Floating bar: page arrows and score zoom */}
       {(
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-gray-900/75 backdrop-blur-md text-white rounded-full px-1.5 py-1.5 shadow-2xl">
+        <div data-tour="nav" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-gray-900/75 backdrop-blur-md text-white rounded-full px-1.5 py-1.5 shadow-2xl">
           {pageMetas.length > 1 && (<>
           <button
             onClick={() => (onStepPage ? onStepPage(-1) : onPageChange(currentPage - 1))}

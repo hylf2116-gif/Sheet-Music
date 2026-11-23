@@ -14,6 +14,10 @@ export interface OmrState {
   hasMusicXml?: boolean;
   // Still recognizing, but the pages finished so far (pages/measureCount) can already be used
   partial?: boolean;
+  // MusicXML/MIDI file the teacher added for playback
+  imported?: { name: string; kind: string } | null;
+  // The teacher has checked and confirmed the bars
+  confirmed?: boolean;
   progress?: { page: number; total: number | null } | null;
   startedAt?: number;
   error?: string;
@@ -40,6 +44,7 @@ interface Props {
   onJump: (n: number) => boolean;
   onClearHighlight: () => void;
   onClose: () => void;
+  onCheckBars?: () => void;
 }
 
 function Toggle({ label, hint, checked, onChange }: {
@@ -64,7 +69,7 @@ const btn: React.CSSProperties = {
 
 export default function OMRPanel({
   state, isHost, prefs, musicXmlUrl, rightOffset,
-  onPrefsChange, onDetect, onJump, onClearHighlight, onClose,
+  onPrefsChange, onDetect, onJump, onClearHighlight, onClose, onCheckBars,
 }: Props) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
@@ -97,7 +102,9 @@ export default function OMRPanel({
     const p = state?.progress;
     statusText = p?.total ? t('Detecting measures… page {page} of {total}', { page: p.page, total: p.total }) : t('Detecting measures…');
     if (state?.partial) statusText += ' · ' + t('{n} bars ready to use', { n: state?.measureCount ?? 0 });
-  } else if (status === 'done') statusText = t('{n} bars detected', { n: state?.measureCount ?? 0 });
+  } else if (status === 'done') statusText = state?.confirmed
+    ? t('{n} bars, confirmed by the teacher', { n: state?.measureCount ?? 0 })
+    : t('{n} bars detected', { n: state?.measureCount ?? 0 }) + ' · ' + t('suggested, not checked yet');
   else if (status === 'error') statusText = t(state?.error || 'Detection failed');
   else if (status === 'unavailable') statusText = t(state?.reason || 'Measure detection is not available');
   else statusText = isHost ? t('Bars have not been detected for this score yet.') : t('The host has not detected bars for this score yet.');
@@ -122,6 +129,15 @@ export default function OMRPanel({
       </div>
       {status === 'running' && (
         <div style={{ fontSize: 11, color: 'var(--t3)' }}>{t('Takes about 1 minute per page. You can keep teaching meanwhile.')}</div>
+      )}
+
+      {isHost && status === 'done' && onCheckBars && (
+        <button onClick={() => { onCheckBars(); onClose(); }} style={{
+          ...btn, background: state?.confirmed ? 'transparent' : '#6366f1', color: state?.confirmed ? 'var(--t2)' : 'white',
+          border: state?.confirmed ? '1px solid var(--border-md)' : 'none',
+        }}>
+          {state?.confirmed ? t('Check bars again') : t('Check and confirm bars')}
+        </button>
       )}
 
       {isHost && (status === 'none' || status === 'error' || status === 'done') && (
