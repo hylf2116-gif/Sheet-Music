@@ -14,7 +14,7 @@ class Reader {
   varlen() { let v = 0; for (let i = 0; i < 4; i++) { const b = this.u8(); v = (v << 7) | (b & 0x7f); if (!(b & 0x80)) break; } return v; }
 }
 
-interface RawNote { tick: number; endTick: number; midi: number; key: string }
+interface RawNote { tick: number; endTick: number; midi: number; key: string; vel: number }
 
 export function parseMidi(buf: ArrayBuffer): ScoreModel {
   const r = new Reader(new DataView(buf));
@@ -28,6 +28,7 @@ export function parseMidi(buf: ArrayBuffer): ScoreModel {
   const tpq = division; // ticks per quarter note
 
   let tempo: number | null = null;
+  const tempoEvents: { tick: number; bpm: number }[] = [];
   const timeSigs: { tick: number; beats: number }[] = [];   // beats = quarter notes per bar
   const byPart = new Map<string, RawNote[]>();
   const names = new Map<string, string>();
@@ -43,9 +44,11 @@ export function parseMidi(buf: ArrayBuffer): ScoreModel {
       let b = r.u8();
       if (b === 0xff) {                       // meta event
         const type = r.u8(); const l = r.varlen(); const start = r.pos;
-        if (type === 0x51 && l === 3 && tempo == null) {
+        if (type === 0x51 && l === 3) {
           const us = (r.u8() << 16) | (r.u8() << 8) | r.u8();
-          tempo = Math.round(60_000_000 / us);
+          const bpm = 60_000_000 / us;
+          tempoEvents.push({ tick, bpm });
+          if (tempo == null) tempo = Math.round(bpm);
         } else if (type === 0x58 && l >= 2) {
           const nn = r.u8(), dd = r.u8();
           timeSigs.push({ tick, beats: nn * 4 / Math.pow(2, dd) });
@@ -64,7 +67,7 @@ export function parseMidi(buf: ArrayBuffer): ScoreModel {
         const key = format === 0 ? `c${ch}` : `t${t}`;
         const slot = `${ch}:${note}`;
         if (kind === 0x90 && vel > 0) {
-          const n: RawNote = { tick, endTick: tick, midi: note, key };
+          const n: RawNote = { tick, endTick: tick, midi: note, key, vel };
           if (!byPart.has(key)) byPart.set(key, []);
           byPart.get(key)!.push(n);
           if (!open.has(slot)) open.set(slot, []);
@@ -105,10 +108,14 @@ export function parseMidi(buf: ArrayBuffer): ScoreModel {
   keys.forEach((k, part) => {
     for (const n of byPart.get(k)!) {
       const beat = n.tick / tpq;
-      notes.push({ beat, dur: Math.max(n.endTick - n.tick, tpq / 8) / tpq, midi: n.midi, bar: barAt(beat), part });
+      // velocity 1–127 → loudness, with a gentle curve so soft notes stay audible
+      notes.push({ beat, dur: Math.max(n.endTick - n.tick, tpq / 8) / tpq, midi: n.midi, bar: barAt(beat), part, vel: Math.pow(n.vel / 127, 0.8), tenuto: true });
     }
   });
   notes.sort((a, b) => a.beat - b.beat || a.midi - b.midi);
   const last = bars[bars.length - 1];
-  return { notes, bars, tempo, totalBeats: last.beat + last.beats, parts };
+  tempoEvents.sort((a, b) => a.tick - b.tick);
+  const tempos = tempoEvents.map(e => ({ beat: e.tick / tpq, bpm: e.bpm }));
+  // MIDI already holds the played order and real note lengths: no repeats to expand, no shortening
+  return { notes, bars, tempo, tempos, totalBeats: last.beat + last.beats, parts, performed: true };
 }

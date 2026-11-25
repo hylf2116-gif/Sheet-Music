@@ -1,118 +1,273 @@
-// Plays a ScoreModel in the browser with Web Audio (no downloads, starts instantly).
-// Notes are scheduled slightly ahead of time so playback stays steady even when the page is busy.
+// Plays a score in the browser with real instrument recordings (CC0 samples in /public/samples:
+// VCSL Kawai grand piano, VSCO-2 CE solo violin and cello section). The written score is first
+// turned into a performance (performance.ts: repeats, tempo changes, fermatas, articulation,
+// dynamics); notes are then scheduled slightly ahead so timing stays steady.
+// If the samples can't load, a simple synth is used instead.
 
-import { midiToFreq, type ScoreModel } from './musicxml';
+import type { ScoreModel } from './musicxml';
+import { buildPerformance, type Performance, type PerfNote } from './performance';
 
-export type Instrument = 'piano' | 'cello' | 'erhu';
+// 'auto' picks a sound for each part from its name / clef (a cello part plays as cello).
+export type Instrument = 'auto' | 'piano' | 'cello' | 'violin';
+type Sound = 'piano' | 'cello' | 'violin';
+
+/** The sound a part should play with, from its name, or its clef and staves when unnamed. */
+export function soundForPart(score: ScoreModel, part: number): Sound {
+  const name = (score.parts?.[part] ?? '').toLowerCase();
+  if (/cello|violoncel|\bvc\.?\b|contrabass|double bass|大提琴|低音提琴/.test(name)) return 'cello';
+  if (/violin|viola|\bvln|\bvla|fiddle|erhu|小提琴|中提琴|二胡|胡琴/.test(name)) return 'violin';
+  if (/piano|keyboard|klavier|钢琴/.test(name)) return 'piano';
+  const info = score.partInfo?.[part];
+  if (info) {
+    if (info.staves >= 2) return 'piano';
+    if (info.clef === 'F') return 'cello';
+    if (info.clef === 'G' || info.clef === 'C') return 'violin';
+  }
+  // no clef (MIDI): judge by range
+  const ps = score.notes.filter(n => (n.part ?? 0) === part).map(n => n.midi).sort((a, b) => a - b);
+  if (ps.length && (score.parts?.length ?? 1) > 1) {
+    const med = ps[ps.length >> 1];
+    if (med < 55 && ps[ps.length - 1] <= 79) return 'cello';
+  }
+  return 'piano';
+}
+
+interface SampleSet { [layer: string]: { midi: number; buf: AudioBuffer }[] }
+
+// Recordings are shared by every player on the page (decoded once per instrument).
+const loaded = new Map<string, Promise<SampleSet | null>>();
+let manifestPromise: Promise<{ instruments: Record<string, Record<string, Record<string, string>>> } | null> | null = null;
+function loadSamples(ctx: AudioContext, inst: 'piano' | 'cello' | 'violin'): Promise<SampleSet | null> {
+  if (loaded.has(inst)) return loaded.get(inst)!;
+  const p = (async () => {
+    try {
+      manifestPromise ||= fetch('/samples/manifest.json').then(r => (r.ok ? r.json() : null)).catch(() => null);
+      const manifest = await manifestPromise;
+      const layers = manifest?.instruments?.[inst];
+      if (!layers) return null;
+      const set: SampleSet = {};
+      await Promise.all(Object.entries(layers).map(async ([layer, files]) => {
+        set[layer] = await Promise.all(Object.entries(files).map(async ([midi, file]) => {
+          const data = await (await fetch(`/samples/${file}`)).arrayBuffer();
+          return { midi: Number(midi), buf: await ctx.decodeAudioData(data) };
+        }));
+        set[layer].sort((a, b) => a.midi - b.midi);
+      }));
+      return set;
+    } catch { return null; }
+  })();
+  loaded.set(inst, p);
+  return p;
+}
+
+// A short, soft room so notes don't sound dry: decaying noise as an impulse response.
+function makeReverb(ctx: AudioContext) {
+  const len = Math.floor(ctx.sampleRate * 1.8);
+  const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+  }
+  const conv = ctx.createConvolver();
+  conv.buffer = ir;
+  return conv;
+}
 
 export class ScorePlayer {
   private ctx: AudioContext | null = null;
-  private master: GainNode | null = null;
+  private dry: GainNode | null = null;
+  private wet: GainNode | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private raf = 0;
   private nextIndex = 0;
-  private startBeat = 0;     // score beat at which playback started
-  private startTime = 0;     // audio time at which that beat sounds
-  private voices: { osc: OscillatorNode[]; gain: GainNode; end: number }[] = [];
-  private lastBar = -1;
+  private startT = 0;        // performance time (s, at the score's tempo) where playback started
+  private startTime = 0;     // audio clock time when startT sounds
+  private voices: { nodes: AudioScheduledSourceNode[]; gain: GainNode; end: number }[] = [];
+  private lastBarIdx = -1;
+  private run = 0;
+  private musicStart = 0;    // audio clock time the first note sounds (after any count-in)
+  private perf: Performance;
+  private samples = new Map<Sound, SampleSet | null>();
 
-  tempo = 80;                // quarter notes per minute
-  instrument: Instrument = 'piano';
-  mutedParts = new Set<number>();          // accompaniment: the student's part is silent
-  loop: { from: number; to: number } | null = null; // beats; playback repeats this range
+  tempo = 80;                // quarter notes per minute at the start of the piece (sets the speed)
+  instrument: Instrument = 'auto';
   playing = false;
+  countIn = false;                         // one bar of clicks before the music starts
+  mutedParts = new Set<number>();          // accompaniment: the student's part is silent
+  loop: { from: number; to: number } | null = null; // performance seconds; playback repeats this range
   onBar: (bar: number) => void = () => {};
   onEnd: () => void = () => {};
+  onLoading: (loading: boolean) => void = () => {};
 
-  constructor(private score: ScoreModel) {}
-
-  setScore(score: ScoreModel) { const was = this.playing; const at = this.currentBeat(); this.stop(); this.score = score; if (was) this.play(at); }
-
-  /** Current position in beats (while playing). */
-  currentBeat(): number {
-    if (!this.playing || !this.ctx) return this.startBeat;
-    const b = this.startBeat + (this.ctx.currentTime - this.startTime) * this.tempo / 60;
-    // The loop restart is scheduled slightly ahead; until then we are still at the end of the range.
-    if (this.loop && b < this.loop.from) return this.loop.to - (this.loop.from - b);
-    return b;
+  constructor(private score: ScoreModel) {
+    this.perf = buildPerformance(score);
+    this.tempo = Math.round(this.perf.baseBpm);
   }
 
-  /** Start at a bar (1-based) or at a beat. */
-  play(fromBeat = 0) {
+  private get speed() { return this.tempo / (this.perf.baseBpm || 80); }
+
+  setScore(score: ScoreModel) {
+    const was = this.playing; const at = this.currentTime();
+    this.stop(); this.score = score; this.perf = buildPerformance(score);
+    if (was) void this.play(at);
+  }
+
+  /** Current position in performance seconds (at the score's tempo). */
+  currentTime(): number {
+    if (!this.playing || !this.ctx) return this.startT;
+    const t = this.startT + (this.ctx.currentTime - this.startTime) * this.speed;
+    // The loop restart is scheduled slightly ahead; until it sounds we are still at the end of the range.
+    if (this.loop && t < this.loop.from) return this.loop.to - (this.loop.from - t);
+    return t;
+  }
+
+  private ensureContext() {
+    if (this.ctx) return this.ctx;
+    const ctx = new AudioContext();
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.ratio.value = 3;
+    comp.connect(ctx.destination);
+    this.dry = ctx.createGain(); this.dry.gain.value = 0.8; this.dry.connect(comp);
+    const rev = makeReverb(ctx);
+    this.wet = ctx.createGain(); this.wet.gain.value = 0.2;
+    this.wet.connect(rev).connect(comp);
+    this.ctx = ctx;
+    return ctx;
+  }
+
+  private soundOf(part: number): Sound {
+    return this.instrument === 'auto' ? soundForPart(this.score, part) : this.instrument;
+  }
+
+  /** Start from a performance time (seconds). Loads the recordings first if needed. */
+  async play(fromT = 0) {
     this.stop();
-    if (!this.ctx) {
-      this.ctx = new AudioContext();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.5;
-      // gentle room so the synth sounds less dry
-      const comp = this.ctx.createDynamicsCompressor();
-      this.master.connect(comp).connect(this.ctx.destination);
+    const run = ++this.run;              // a newer play/stop cancels this one
+    this.startT = fromT;
+    const ctx = this.ensureContext();
+    void ctx.resume();
+    const parts = new Set(this.perf.notes.map(n => n.part));
+    const want = [...new Set([...parts].map(p => this.soundOf(p)))].filter(w => !this.samples.has(w));
+    if (want.length) {
+      this.onLoading(true);
+      const sets = await Promise.all(want.map(w => loadSamples(ctx, w)));
+      want.forEach((w, i) => this.samples.set(w, sets[i]));
+      this.onLoading(false);
     }
-    void this.ctx.resume();
+    if (run !== this.run) return;        // stopped (or restarted) while the sounds were loading
     this.playing = true;
-    this.startBeat = fromBeat;
-    this.startTime = this.ctx.currentTime + 0.08;
-    this.nextIndex = this.score.notes.findIndex(n => n.beat >= fromBeat - 1e-6);
-    if (this.nextIndex < 0) this.nextIndex = this.score.notes.length;
-    this.lastBar = -1;
+    this.startT = fromT;
+    this.startTime = ctx.currentTime + 0.08;
+    if (this.countIn) this.startTime += this.clickBar(this.startTime, fromT);
+    this.musicStart = this.startTime;
+    this.nextIndex = this.perf.notes.findIndex(n => n.t >= fromT - 1e-6);
+    if (this.nextIndex < 0) this.nextIndex = this.perf.notes.length;
+    this.lastBarIdx = -1;
     this.timer = setInterval(() => this.schedule(), 25);
     this.schedule();
     const tick = () => {
       if (!this.playing) return;
-      const beat = this.currentBeat();
-      const bar = this.barAt(beat);
-      if (bar !== this.lastBar && bar > 0) { this.lastBar = bar; this.onBar(bar); }
-      if (!this.loop && beat >= this.score.totalBeats + 0.25) { this.stop(); this.onEnd(); return; }
+      const t = this.currentTime();
+      const idx = this.barIndexAt(this.heardTime());
+      if (idx !== this.lastBarIdx && idx >= 0) { this.lastBarIdx = idx; this.onBar(this.perf.bars[idx].n); }
+      if (!this.loop && t >= this.perf.total + 0.3) { this.stop(); this.onEnd(); return; }
       this.raf = requestAnimationFrame(tick);
     };
     this.raf = requestAnimationFrame(tick);
   }
 
-  /** Loop bars from..to (inclusive, 1-based), or null to stop looping. */
-  setLoopBars(range: { from: number; to: number } | null) {
-    if (!range) { this.loop = null; return; }
-    const a = this.score.bars.find(b => b.n === Math.min(range.from, range.to));
-    const z = this.score.bars.find(b => b.n === Math.max(range.from, range.to));
-    this.loop = a && z ? { from: a.beat, to: z.beat + z.beats } : null;
+  /** Count-in: one bar of clicks (accented first beat) ending at `at`. Returns its length in seconds. */
+  private clickBar(at: number, fromT: number): number {
+    const ctx = this.ctx!;
+    const idx = Math.max(0, this.barIndexAt(fromT));
+    const written = this.score.bars.find(b => b.n === this.perf.bars[idx]?.n);
+    const beats = Math.max(2, Math.round(written?.beats ?? 4));
+    const beatSec = 60 / this.tempo;
+    for (let k = 0; k < beats; k++) {
+      const t = at + k * beatSec;
+      const o = ctx.createOscillator(); o.frequency.value = k === 0 ? 1500 : 1000;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      o.connect(g); g.connect(this.dry!);
+      o.start(t); o.stop(t + 0.08);
+      this.voices.push({ nodes: [o], gain: g, end: t + 0.08 });
+    }
+    return beats * beatSec;
   }
 
+  /** What the listener hears now (audio output delay taken off), for drawing. */
+  private heardTime(): number {
+    const ctx = this.ctx;
+    if (!this.playing || !ctx) return this.startT;
+    const lag = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+    const t = this.startT + (ctx.currentTime - lag - this.startTime) * this.speed;
+    if (this.loop && t < this.loop.from) return this.loop.to - (this.loop.from - t);
+    return Math.max(this.startT - 1e-6, t);
+  }
+
+  /** Where playback is: the written bar and how far through it (0..1), or null before the music starts. */
+  progress(): { bar: number; frac: number } | null {
+    const t = this.heardTime();
+    const idx = this.barIndexAt(t);
+    if (idx < 0) return null;
+    const b = this.perf.bars[idx];
+    if (this.playing && this.ctx && this.ctx.currentTime < this.musicStart) return { bar: b.n, frac: 0 }; // counting in
+    return { bar: b.n, frac: Math.max(0, Math.min(1, (t - b.t) / (b.dur || 1))) };
+  }
+
+  /** Heard position and length of the whole performance, in seconds at the score's tempo. */
+  position(): { t: number; total: number } { return { t: Math.max(0, this.heardTime()), total: this.perf.total }; }
+  /** Performance time where a fraction (0..1) of the piece falls. */
+  timeAt(frac: number) { return Math.max(0, Math.min(1, frac)) * this.perf.total; }
+
+  /** Start at the first time a written bar is played. */
   playFromBar(bar: number) {
-    const b = this.score.bars.find(x => x.n === bar);
-    this.play(b ? b.beat : 0);
+    const b = this.perf.bars.find(x => x.n === bar);
+    void this.play(b ? b.t : 0);
   }
 
   stop() {
+    this.run++;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     cancelAnimationFrame(this.raf);
-    if (this.playing && this.ctx) this.startBeat = this.currentBeat();
+    if (this.playing && this.ctx) this.startT = this.currentTime();
     this.playing = false;
     const now = this.ctx?.currentTime ?? 0;
     for (const v of this.voices) {
       try {
         v.gain.gain.cancelScheduledValues(now);
-        v.gain.gain.setTargetAtTime(0, now, 0.02);
-        v.osc.forEach(o => o.stop(now + 0.1));
+        v.gain.gain.setTargetAtTime(0, now, 0.03);
+        v.nodes.forEach(o => o.stop(now + 0.2));
       } catch {}
     }
     this.voices = [];
   }
 
-  /** Change speed without a jump: keep the current beat where it is. */
+  /** Change speed without a jump: keep the current place. */
   setTempo(bpm: number) {
+    if (bpm === this.tempo) return;
     if (!this.playing) { this.tempo = bpm; return; }
-    const beat = this.currentBeat();
-    this.stop();
-    this.tempo = bpm;
-    this.play(beat);
+    const t = this.currentTime();
+    this.stop(); this.tempo = bpm; void this.play(t);
   }
 
-  barAt(beat: number): number {
-    const bars = this.score.bars;
-    let lo = 0, hi = bars.length - 1, ans = bars.length ? bars[0].n : 0;
+  /** Loop written bars from..to (inclusive, 1-based), or null to stop looping. */
+  setLoopBars(range: { from: number; to: number } | null) {
+    if (!range) { this.loop = null; return; }
+    const lo = Math.min(range.from, range.to), hi = Math.max(range.from, range.to);
+    const a = this.perf.bars.find(b => b.n === lo);
+    const z = this.perf.bars.find(b => b.n === hi && (!a || b.t >= a.t));
+    this.loop = a && z ? { from: a.t, to: z.t + z.dur } : null;
+  }
+
+  private barIndexAt(t: number): number {
+    const bars = this.perf.bars;
+    let lo = 0, hi = bars.length - 1, ans = -1;
     while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (bars[mid].beat <= beat + 1e-6) { ans = bars[mid].n; lo = mid + 1; } else hi = mid - 1;
+      const m = (lo + hi) >> 1;
+      if (bars[m].t <= t + 1e-6) { ans = m; lo = m + 1; } else hi = m - 1;
     }
     return ans;
   }
@@ -120,72 +275,130 @@ export class ScorePlayer {
   private schedule() {
     const ctx = this.ctx;
     if (!ctx || !this.playing) return;
-    const horizon = ctx.currentTime + 0.2;
-    const secPerBeat = 60 / this.tempo;
-    const notes = this.score.notes;
+    // a hidden tab only runs timers about once a second: schedule further ahead then
+    const horizon = ctx.currentTime + (typeof document !== 'undefined' && document.hidden ? 1.5 : 0.3);
+    const notes = this.perf.notes;
+    const sp = this.speed;
     while (true) {
       // Loop: at the end of the range, continue from its start (seamlessly, ahead of time).
-      if (this.loop && (this.nextIndex >= notes.length || notes[this.nextIndex].beat >= this.loop.to - 1e-6)) {
+      if (this.loop && (this.nextIndex >= notes.length || notes[this.nextIndex].t >= this.loop.to - 1e-6)) {
         const len = this.loop.to - this.loop.from;
         if (len <= 0) break;
-        const loopEndTime = this.startTime + (this.loop.to - this.startBeat) * secPerBeat;
+        const loopEndTime = this.startTime + (this.loop.to - this.startT) / sp;
         if (loopEndTime > horizon) break;
         this.startTime = loopEndTime;
-        this.startBeat = this.loop.from;
-        this.nextIndex = notes.findIndex(x => x.beat >= this.loop!.from - 1e-6);
+        this.startT = this.loop.from;
+        this.nextIndex = notes.findIndex(x => x.t >= this.loop!.from - 1e-6);
         if (this.nextIndex < 0) break;
         continue;
       }
       if (this.nextIndex >= notes.length) break;
       const n = notes[this.nextIndex];
-      const t = this.startTime + (n.beat - this.startBeat) * secPerBeat;
-      if (t > horizon) break;
-      if (t >= ctx.currentTime - 0.02 && !this.mutedParts.has(n.part ?? 0)) this.voice(n.midi, t, Math.max(0.06, n.dur * secPerBeat));
+      const at = this.startTime + (n.t - this.startT) / sp;
+      if (at > horizon) break;
+      if (at >= ctx.currentTime - 0.02 && !this.mutedParts.has(n.part)) this.voice(n, at, Math.max(0.05, n.dur / sp));
       this.nextIndex++;
     }
     this.voices = this.voices.filter(v => v.end > ctx.currentTime);
   }
 
-  private voice(midi: number, t: number, dur: number) {
-    const ctx = this.ctx!, out = this.master!;
-    const f = midiToFreq(midi);
-    const gain = ctx.createGain();
-    const oscs: OscillatorNode[] = [];
-    let end = t + dur;
+  /** Loudness 0..1 → gain. A musical range (pp is about 13 dB under ff), never silent or blasting. */
+  private static levelOf(vel: number) {
+    const v = Math.max(0.15, Math.min(1, vel));
+    return 0.62 * Math.pow(10, ((v - 0.86) * 24) / 20);
+  }
 
-    if (this.instrument === 'piano') {
-      // struck string: bright attack that decays, two slightly detuned partials
-      for (const [type, mult, level] of [['triangle', 1, 0.6], ['sine', 2, 0.18], ['sine', 3, 0.06]] as const) {
-        const o = ctx.createOscillator(); o.type = type; o.frequency.value = f * mult;
-        const g = ctx.createGain(); g.gain.value = level; o.connect(g).connect(gain); oscs.push(o);
+  private voice(n: PerfNote, at: number, dur: number) {
+    const ctx = this.ctx!;
+    const sound = this.soundOf(n.part);
+    const set = this.samples.get(sound);
+    if (!set || !Object.values(set).some(l => l.length)) { this.synthVoice(n, at, dur, sound); return; }
+    const gain = ctx.createGain();
+    const level = ScorePlayer.levelOf(n.vel);
+    const nodes: AudioScheduledSourceNode[] = [];
+    let end: number;
+
+    // Two recorded layers (soft/loud): blend them by loudness instead of jumping between them,
+    // so the tone colour changes smoothly from note to note.
+    const blend = set.soft?.length && set.loud?.length ? Math.max(0, Math.min(1, (n.vel - 0.35) / 0.4)) : null;
+    const layers: { list: { midi: number; buf: AudioBuffer }[]; mix: number }[] = blend == null
+      ? [{ list: (set.loud?.length ? set.loud : set.soft ?? Object.values(set)[0]), mix: 1 }]
+      : [{ list: set.soft, mix: 1 - blend }, { list: set.loud, mix: blend }].filter(l => l.mix > 0.02);
+
+    const nearest = (list: { midi: number; buf: AudioBuffer }[]) => {
+      let best = list[0];
+      for (const x of list) if (Math.abs(x.midi - n.midi) < Math.abs(best.midi - n.midi)) best = x;
+      return best;
+    };
+
+    if (sound === 'piano') {
+      // struck string: sounds until released (damper), then a short natural release
+      gain.gain.setValueAtTime(level, at);
+      const release = at + Math.max(dur, 0.12);
+      gain.gain.setTargetAtTime(0, release, 0.09);
+      end = release + 0.6;
+      for (const l of layers) {
+        const best = nearest(l.list);
+        const src = ctx.createBufferSource();
+        src.buffer = best.buf;
+        src.playbackRate.value = Math.pow(2, (n.midi - best.midi) / 12);
+        const g = ctx.createGain(); g.gain.value = l.mix;
+        src.connect(g).connect(gain);
+        src.start(at); src.stop(Math.min(at + best.buf.duration / src.playbackRate.value, end) + 0.05);
+        nodes.push(src);
       }
-      const decay = Math.min(2.5, 0.4 + 300 / f);
-      end = t + Math.max(dur, 0.25) + 0.3;
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.5, t + 0.005);
-      gain.gain.setTargetAtTime(0.0001, t + 0.01, decay / 4);
-      gain.gain.setTargetAtTime(0, t + Math.max(dur, 0.25), 0.08);
     } else {
-      // bowed string: sawtooth through a filter, soft attack, vibrato after the start
-      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; oscs.push(o);
-      const filt = ctx.createBiquadFilter();
-      if (this.instrument === 'erhu') { filt.type = 'bandpass'; filt.frequency.value = Math.min(4000, f * 3); filt.Q.value = 1.6; }
-      else { filt.type = 'lowpass'; filt.frequency.value = Math.min(3500, f * 4); filt.Q.value = 0.7; }
-      o.connect(filt).connect(gain);
-      const lfo = ctx.createOscillator(); lfo.frequency.value = this.instrument === 'erhu' ? 6 : 5.2;
-      const depth = ctx.createGain(); depth.gain.setValueAtTime(0, t);
-      depth.gain.linearRampToValueAtTime(f * (this.instrument === 'erhu' ? 0.012 : 0.006), t + Math.min(0.35, dur));
-      lfo.connect(depth).connect(o.frequency); oscs.push(lfo);
-      const level = this.instrument === 'erhu' ? 0.32 : 0.3;
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(level, t + Math.min(0.06, dur / 3));
-      gain.gain.setValueAtTime(level * 0.85, t + Math.max(0.07, dur - 0.05));
-      gain.gain.linearRampToValueAtTime(0, t + dur + 0.04);
-      end = t + dur + 0.06;
+      // bowed: soft start, held, bow release. Long notes chain overlapping pieces of the steady
+      // middle of the recording with crossfades (a plain loop clicks and wobbles).
+      const attack = n.legato ? 0.04 : 0.07;
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.linearRampToValueAtTime(level, at + attack);
+      gain.gain.setValueAtTime(level, at + Math.max(attack, dur - 0.02));
+      gain.gain.setTargetAtTime(0, at + dur, 0.08);
+      end = at + dur + 0.5;
+      const best = nearest(layers[0].list);
+      const rate = Math.pow(2, (n.midi - best.midi) / 12);
+      const bufDur = best.buf.duration / rate;           // real seconds of recording
+      const xf = 0.25, startOff = 0.8;                   // crossfade, where the steady part begins (buffer s)
+      let t = at, offset = 0;
+      for (let k = 0; t < end && k < 40; k++) {
+        const src = ctx.createBufferSource();
+        src.buffer = best.buf; src.playbackRate.value = rate;
+        const g = ctx.createGain();
+        const pieceLen = bufDur - offset / rate - 0.15;  // real seconds this piece can play
+        if (k > 0) { g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + xf); }
+        else g.gain.setValueAtTime(1, t);
+        const pieceEnd = Math.min(end, t + pieceLen);
+        if (pieceEnd < end) { g.gain.setValueAtTime(1, pieceEnd - xf); g.gain.linearRampToValueAtTime(0, pieceEnd); }
+        src.connect(g).connect(gain);
+        src.start(t, offset); src.stop(pieceEnd + 0.02);
+        nodes.push(src);
+        if (pieceEnd >= end || pieceLen <= xf * 2 + 0.2) break;
+        t = pieceEnd - xf; offset = startOff;
+      }
     }
-    gain.connect(out);
-    oscs.forEach(o => { o.start(t); o.stop(end + 0.05); });
-    this.voices.push({ osc: oscs, gain, end });
+    // the recordings carry their own natural vibrato: nothing is added on top
+    gain.connect(this.dry!);
+    gain.connect(this.wet!);
+    this.voices.push({ nodes, gain, end });
+  }
+
+  // Fallback when the recordings are not available: a simple synthesized tone.
+  private synthVoice(n: PerfNote, at: number, dur: number, sound: Sound) {
+    const ctx = this.ctx!;
+    const f = 440 * Math.pow(2, (n.midi - 69) / 12);
+    const o = ctx.createOscillator(); o.type = sound === 'piano' ? 'triangle' : 'sawtooth'; o.frequency.value = f;
+    const filt = ctx.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = Math.min(4000, f * 4);
+    const gain = ctx.createGain();
+    const level = 0.12 + 0.3 * n.vel;
+    gain.gain.setValueAtTime(0, at);
+    gain.gain.linearRampToValueAtTime(level, at + 0.01);
+    gain.gain.setTargetAtTime(0, at + dur, 0.08);
+    o.connect(filt).connect(gain);
+    gain.connect(this.dry!); gain.connect(this.wet!);
+    const end = at + dur + 0.4;
+    o.start(at); o.stop(end);
+    this.voices.push({ nodes: [o], gain, end });
   }
 
   dispose() { this.stop(); void this.ctx?.close(); this.ctx = null; }
