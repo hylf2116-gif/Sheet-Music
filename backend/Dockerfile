@@ -4,13 +4,18 @@
 
 FROM node:22-bookworm-slim
 
-# Audiveris (official Linux release; it brings its own Java runtime) + unzip (used to read its files)
+# Audiveris (official Linux release; it brings its own Java runtime) + unzip (used to read its files).
+# Its installer also adds a desktop menu entry, which fails on a server with no desktop: the menu
+# folders are created first, and if that step still fails it is skipped (the program is installed).
 ARG AUDIVERIS_VERSION=5.11.0
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl unzip fontconfig \
  && curl -fsSL -o /tmp/audiveris.deb \
       "https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/Audiveris-${AUDIVERIS_VERSION}-ubuntu22.04-x86_64.deb" \
- && apt-get install -y --no-install-recommends /tmp/audiveris.deb \
+ && mkdir -p /usr/share/desktop-directories /usr/share/applications \
+ && (apt-get install -y --no-install-recommends /tmp/audiveris.deb \
+     || (rm -f /var/lib/dpkg/info/audiveris.postinst && dpkg --configure -a)) \
+ && test -x /opt/audiveris/bin/Audiveris \
  && rm -f /tmp/audiveris.deb \
  && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
