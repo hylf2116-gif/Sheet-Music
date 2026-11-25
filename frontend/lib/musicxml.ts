@@ -27,6 +27,11 @@ export interface ScoreBar {
   repeatEnd?: number;          // :|  (times to play, usually 2)
   ending?: number[];           // first/second ending numbers this bar belongs to
   repaired?: boolean;          // recognition read the wrong length here; notes were fitted to the bar
+  segno?: boolean;             // 𝄋 (D.S. jumps back here)
+  coda?: boolean;              // 𝄌 the coda starts here
+  toCoda?: boolean;            // "To Coda": after the D.C./D.S. jump, skip to the coda from here
+  fine?: boolean;              // Fine: after the D.C./D.S. jump, the piece ends here
+  jump?: 'dc' | 'ds';          // D.C. / D.S. at the end of this bar
 }
 export interface TempoMark { beat: number; bpm: number }
 export interface ScoreModel {
@@ -48,13 +53,15 @@ const TYPE_BEATS: Record<string, number> = {
   '16th': 0.25, '32nd': 0.125, '64th': 0.0625, '128th': 0.03125,
 };
 // Dynamic marks → loudness
+// Kept within a musical range: each step is clearly different, ff is full but not a shock.
 const DYN: Record<string, number> = {
-  pppp: 0.18, ppp: 0.24, pp: 0.32, p: 0.42, mp: 0.52, mf: 0.62, f: 0.74, ff: 0.86, fff: 0.94, ffff: 1,
+  pppp: 0.24, ppp: 0.28, pp: 0.33, p: 0.41, mp: 0.5, mf: 0.58, f: 0.67, ff: 0.76, fff: 0.83, ffff: 0.88,
 };
 // One-note accents: they make that note loud, the general level stays (fp: loud, then soft).
 const ONE_NOTE: Record<string, { hit: number; after?: number }> = {
-  sf: { hit: 0.86 }, sfz: { hit: 0.88 }, sffz: { hit: 0.92 }, fz: { hit: 0.86 }, rfz: { hit: 0.8 }, rf: { hit: 0.8 },
-  sfp: { hit: 0.86, after: DYN.p }, fp: { hit: 0.76, after: DYN.p }, sfzp: { hit: 0.88, after: DYN.p },
+  // hit = how much louder than the current level that one note is (added, then capped)
+  sf: { hit: 0.16 }, sfz: { hit: 0.18 }, sffz: { hit: 0.22 }, fz: { hit: 0.16 }, rfz: { hit: 0.12 }, rf: { hit: 0.12 },
+  sfp: { hit: 0.18, after: DYN.p }, fp: { hit: 0.14, after: DYN.p }, sfzp: { hit: 0.18, after: DYN.p },
 };
 // Tempo words (when the score gives no number), in quarter notes per minute.
 const TEMPO_WORDS: [RegExp, number][] = [
@@ -130,6 +137,20 @@ export function parseMusicXml(xml: string): ScoreModel {
       const pendingGrace: ScoreNote[] = [];
       const firstNote = notes.length;   // notes of this bar start here (for the rhythm repair below)
 
+      // A big step up with no crescendo written (the AI reader never writes hairpins): grow into it
+      // over the two beats before, as a player would, instead of jumping.
+      const setLevel = (atBeat: number, to: number) => {
+        if (!wedge && to - vel >= 0.15) {
+          for (let k = notes.length - 1; k >= 0; k--) {
+            const n = notes[k];
+            if (n.part !== partIndex) continue;
+            if (n.beat < atBeat - 2) break;
+            const f = Math.max(0, Math.min(1, (n.beat - (atBeat - 2)) / 2));
+            n.vel = (n.vel ?? vel) + (to - (n.vel ?? vel)) * f * 0.75;
+          }
+        }
+        vel = to;
+      };
       const endWedge = (atBeat: number, target?: number) => {
         if (!wedge) return;
         const to = target ?? Math.max(0.15, Math.min(1, wedge.from + 0.2 * wedge.dir));
@@ -170,13 +191,26 @@ export function parseMusicXml(xml: string): ScoreModel {
           const dynEl = el.querySelector('dynamics > *');
           const dname = dynEl?.tagName ?? '';
           if (ONE_NOTE[dname]) hit = ONE_NOTE[dname];
-          else if (DYN[dname] != null) { endWedge(here, DYN[dname]); vel = DYN[dname]; }
+          else if (DYN[dname] != null) { endWedge(here, DYN[dname]); setLevel(here, DYN[dname]); }
           else if (!dynEl && dynAttr > 0) { const v = Math.max(0.2, Math.min(0.95, dynAttr * 0.9 / 127)); endWedge(here, v); vel = v; }
           const wd = el.querySelector('wedge');
           const wt = wd?.getAttribute('type');
           if (wt === 'crescendo' || wt === 'diminuendo') wedge = { start: here, from: vel, dir: wt === 'crescendo' ? 1 : -1 };
           else if (wt === 'stop') endWedge(here);
-        } else if (tag === 'barline') {
+        }
+        // Road map marks (segno, coda, D.C., D.S., Fine, To Coda): as symbols, words or <sound>
+        if (tag === 'direction' || tag === 'sound' || tag === 'barline') {
+          const snd = tag === 'sound' ? el : el.querySelector('sound');
+          const w = Array.from(el.querySelectorAll('words')).map(x => x.textContent ?? '').join(' ').trim();
+          if (el.querySelector('segno') || snd?.hasAttribute('segno')) barInfo.segno = true;
+          const hasCodaSign = !!el.querySelector('coda') || snd?.hasAttribute('coda');
+          if (snd?.hasAttribute('tocoda') || /to\s*coda|al\s*coda.*⊕|^⊕$/i.test(w)) barInfo.toCoda = true;
+          else if (hasCodaSign || /^coda\b/i.test(w)) barInfo.coda = true;
+          if (snd?.hasAttribute('fine') || /^fine\b/i.test(w)) barInfo.fine = true;
+          if (snd?.getAttribute('dacapo') === 'yes' || /\bd\.?\s*c\.?(\s|$)|da\s*capo/i.test(w)) barInfo.jump = 'dc';
+          if (snd?.hasAttribute('dalsegno') || /\bd\.?\s*s\.?(\s|$)|dal\s*segno/i.test(w)) barInfo.jump = 'ds';
+        }
+        if (tag === 'barline') {
           const rep = el.querySelector('repeat');
           if (rep?.getAttribute('direction') === 'forward') barInfo.repeatStart = true;
           if (rep?.getAttribute('direction') === 'backward') barInfo.repeatEnd = Number(rep.getAttribute('times')) || 2;
@@ -222,7 +256,7 @@ export function parseMusicXml(xml: string): ScoreModel {
           const orn = el.querySelector('notations > ornaments');
           // dynamics written on the note itself
           const nd = el.querySelector('notations > dynamics > *')?.tagName ?? '';
-          if (ONE_NOTE[nd]) hit = ONE_NOTE[nd]; else if (DYN[nd] != null) { endWedge(beat, DYN[nd]); vel = DYN[nd]; }
+          if (ONE_NOTE[nd]) hit = ONE_NOTE[nd]; else if (DYN[nd] != null) { endWedge(beat, DYN[nd]); setLevel(beat, DYN[nd]); }
           // slurs: a note is "in" a slur from the start note up to and including the stop note
           const slurEls = Array.from(el.querySelectorAll('notations > slur'));
           for (const sl of slurEls) if (sl.getAttribute('type') === 'start') slurs.add(sl.getAttribute('number') ?? '1');
@@ -230,7 +264,7 @@ export function parseMusicXml(xml: string): ScoreModel {
           const slur: ScoreNote['slur'] = stops.length ? 'end' : slurs.size ? 'in' : undefined;
           for (const sl of stops) slurs.delete(sl.getAttribute('number') ?? '1');
           let noteVel = vel;
-          if (hit && !isChord) { noteVel = hit.hit; if (hit.after != null) vel = hit.after; hit = null; }
+          if (hit && !isChord) { noteVel = Math.min(0.84, vel + hit.hit); if (hit.after != null) vel = hit.after; hit = null; }
           else if (isChord) noteVel = notes[notes.length - 1]?.vel ?? vel;
           const accMark = orn?.querySelector('accidental-mark')?.textContent ?? '';
           const tremEl = orn?.querySelector('tremolo');
@@ -282,6 +316,8 @@ export function parseMusicXml(xml: string): ScoreModel {
         existing.repeatEnd ||= barInfo.repeatEnd;
         existing.ending ||= barInfo.ending;
         existing.repaired ||= barInfo.repaired;
+        existing.segno ||= barInfo.segno; existing.coda ||= barInfo.coda; existing.toCoda ||= barInfo.toCoda;
+        existing.fine ||= barInfo.fine; existing.jump ||= barInfo.jump;
       }
       barStart += barInfo.beats;
     });

@@ -13,7 +13,10 @@ import { usePitch } from '../hooks/usePitch';
 // being played and keeps it on screen (turning pages). Each person plays on their own device.
 export interface AiMark { bar: number; kind: string; text: string }
 
-export default function PlaybackBar({ roomId, ready, version, partial, imported, barBoxCount, startBar, onBar, keepInView, onScore, onMarkOffNotes, isHost, onAiMarks, canPick, pickMode, onPickMode, pickedBar, onLoopBars }: {
+export default function PlaybackBar({ roomId, ready, version, partial, imported, barBoxCount, startBar, onBar, keepInView, onScore, onMarkOffNotes, isHost, onAiMarks, canPick, pickMode, onPickMode, pickedBar, onLoopBars, showBarNumbers, onToggleBarNumbers, onOpenBars }: {
+  showBarNumbers?: boolean;             // bar numbers drawn on the score
+  onToggleBarNumbers?: () => void;
+  onOpenBars?: () => void;              // the Bars panel (numbers, highlight, check and fix bars)
   canPick?: boolean;                    // bar boxes exist, so bars can be clicked on the score
   pickMode?: boolean;                   // "click the score to play" is on
   onPickMode?: (on: boolean) => void;
@@ -408,6 +411,22 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
           <div className="fixed inset-0 z-[1]" onClick={() => setShowMore(false)} />
           <div className="cp-glass cp-solid cp-pop absolute bottom-full mb-2 right-0 z-[2] w-[300px] max-w-full p-4 rounded-[22px] flex flex-col gap-3.5"
             style={{ transformOrigin: 'bottom right' }}>
+            {(onToggleBarNumbers || onOpenBars) && (
+              <Field label={t('Bars')}>
+                <div className="flex gap-2">
+                  {onToggleBarNumbers && (
+                    <button onClick={onToggleBarNumbers} aria-pressed={!!showBarNumbers} className="cp-chip flex-1 justify-center">
+                      {showBarNumbers ? t('Hide bar numbers') : t('Show bar numbers')}
+                    </button>
+                  )}
+                  {onOpenBars && (
+                    <button onClick={() => { onOpenBars(); setShowMore(false); }} className="cp-chip flex-1 justify-center">
+                      {t('Check / fix bars')}
+                    </button>
+                  )}
+                </div>
+              </Field>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('Start at bar')}>
                 <input type="number" min={1} max={total || 999} value={fromBar} aria-label={t('Start at bar')}
@@ -537,7 +556,7 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
                 background: activeParts.includes(i) && !partOff(i) ? 'var(--cp-live)' : partOff(i) ? 'transparent' : 'var(--cp-ink-3)',
                 boxShadow: activeParts.includes(i) && !partOff(i) ? '0 0 8px var(--cp-live)' : partOff(i) ? 'inset 0 0 0 1px var(--cp-ink-3)' : 'none' }} />
             ))}
-            <span className="hidden lg:inline">{t('Parts')}</span>
+            <span className="hidden sm:inline">{t('Parts')}</span>
           </button>
 
           {offNotes.length > 0 && onMarkOffNotes && (
@@ -552,8 +571,9 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
             </button>
           )}
           <button onClick={() => setShowMore(v => !v)} aria-pressed={showMore} title={t('Playback settings')} aria-label={t('Playback settings')}
-            className="cp-btn w-9 h-9 rounded-full q-bottom-extra">
-            <ChipIcon><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></ChipIcon>
+            className="cp-chip q-bottom-extra">
+            <ChipIcon><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></ChipIcon>
+            <span className="hidden md:inline">{t('More')}</span>
           </button>
         </div>
 

@@ -330,10 +330,10 @@ export class ScorePlayer {
     this.voices = this.voices.filter(v => v.end > ctx.currentTime);
   }
 
-  /** Loudness 0..1 → gain. A musical range (pp is about 13 dB under ff), never silent or blasting. */
+  /** Loudness 0..1 → gain. A musical range (pp about 9 dB under ff), never silent or blasting. */
   private static levelOf(vel: number) {
     const v = Math.max(0.15, Math.min(1, vel));
-    return 0.62 * Math.pow(10, ((v - 0.86) * 24) / 20);
+    return 0.62 * Math.pow(10, ((v - 0.8) * 20) / 20);   // pp ≈ -9 dB, ff ≈ 0 dB
   }
 
   private voice(n: PerfNote, at: number, dur: number) {

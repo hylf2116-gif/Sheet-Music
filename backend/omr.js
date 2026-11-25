@@ -417,17 +417,48 @@ function joinHomrPages(got, pages, partial) {
  */
 function joinPageParts(xmls) {
   if (xmls.length <= 1) return xmls[0] || '';
-  const partsOf = (xml) => [...xml.matchAll(/<part\s+id="([^"]+)"\s*>([\s\S]*?)<\/part>/g)].map((m) => m[2]);
-  const pages = xmls.map(partsOf);
+  const partsOf = (xml) => [...xml.matchAll(/<part\s+id="([^"]+)"\s*>([\s\S]*?)<\/part>/g)].map((m) => ({ id: m[1], body: m[2] }));
+  const namesOf = (xml) => {
+    const names = new Map();
+    for (const m of xml.matchAll(/<score-part\s+id="([^"]+)"[^>]*>[\s\S]*?<part-name>([^<]*)<\/part-name>/g)) names.set(m[1], m[2].trim().toLowerCase());
+    return names;
+  };
+  // which clefs a part uses: a part with a bass clef is the piano / low part; treble only = melody
+  const clefsOf = (body) => [...new Set([...body.matchAll(/<sign>([A-Z])<\/sign>/g)].map((m) => m[1]))].sort().join('');
+  const pages = xmls.map((xml) => { const names = namesOf(xml); return partsOf(xml).map((p) => ({ ...p, name: names.get(p.id) || '', clefs: clefsOf(p.body) })); });
   let base = 0;
   pages.forEach((p, i) => { if (p.length > pages[base].length) base = i; });
-  const count = pages[base].length;
+  const baseParts = pages[base];
+  const count = baseParts.length;
   if (!count) return xmls[0];
   const bodies = Array.from({ length: count }, () => []);
   for (const page of pages) {
-    const bars = (page[0]?.match(/<measure\b/g) || []).length;
-    for (let k = 0; k < count; k++) {
-      bodies[k].push(page[k] ?? '<measure number="0"></measure>'.repeat(bars)); // empty bars: that part rests
+    const bars = (page[0]?.body.match(/<measure\b/g) || []).length;
+    // Match this page's parts to the score's parts: by the clefs they use first (a violin page
+    // that the reader calls "Piano" because of a small cue line still has only treble clefs),
+    // then by name, then by order. A page with only the piano must not give its notes to the violin.
+    const slot = new Array(page.length).fill(-1);
+    const used = new Set();
+    const hasBass = (c) => c.includes('F');
+    for (const same of [
+      (bp, p) => bp.clefs && bp.clefs === p.clefs && (page.length === count || bp.name === p.name || baseParts.filter((x) => x.clefs === p.clefs).length === 1),
+      (bp, p) => hasBass(bp.clefs) === hasBass(p.clefs) && baseParts.filter((x) => hasBass(x.clefs) === hasBass(p.clefs)).length === 1,
+      (bp, p) => bp.name && bp.name === p.name,
+    ]) {
+      page.forEach((p, k) => {
+        if (slot[k] >= 0) return;
+        const j = baseParts.findIndex((bp, i) => !used.has(i) && same(bp, p));
+        if (j >= 0) { slot[k] = j; used.add(j); }
+      });
+    }
+    page.forEach((p, k) => {
+      if (slot[k] >= 0) return;
+      const j = [...Array(count).keys()].find((i) => !used.has(i));
+      if (j != null) { slot[k] = j; used.add(j); }
+    });
+    for (let i = 0; i < count; i++) {
+      const k = slot.indexOf(i);
+      bodies[i].push(k >= 0 ? page[k].body : '<measure number="0"></measure>'.repeat(bars)); // empty bars: this part rests
     }
   }
   let i = 0;

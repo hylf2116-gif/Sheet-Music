@@ -25,24 +25,42 @@ export interface Performance {
 
 const DEFAULT_BPM = 80;
 
-/** The order bars are played in: repeats and first/second endings expanded. Returns bar indexes. */
+/** The order bars are played in: repeats, 1st/2nd endings, then D.C. / D.S. (back to the start
+ *  or the segno), "To Coda" (jump to the coda) and Fine (stop). After a D.C./D.S. jump, repeats
+ *  are not taken again (the usual convention). Returns bar indexes. */
 export function playOrder(model: ScoreModel): number[] {
   const bars = model.bars;
   if (model.performed) return bars.map((_, i) => i);
   const order: number[] = [];
+  const segnoAt = bars.findIndex(b => b.segno);
+  const codaAt = bars.findIndex(b => b.coda);
   let i = 0, start = 0, pass = 1, inEnding = false, guard = 0;
+  let jumped = false;            // a D.C. / D.S. has been taken
   while (i < bars.length && guard++ < 20000) {
     const b = bars[i];
-    if (b.repeatStart && i !== start) { start = i; pass = 1; }
-    if (b.ending) {
-      inEnding = true;
-      if (!b.ending.includes(pass)) { i++; continue; }  // not this time through
-    } else if (inEnding) {                             // left the endings: next section
-      inEnding = false; pass = 1; start = i;
+    if (!jumped) {
+      if (b.repeatStart && i !== start) { start = i; pass = 1; }
+      if (b.ending) {
+        inEnding = true;
+        if (!b.ending.includes(pass)) { i++; continue; }   // not this time through
+      } else if (inEnding) {                               // left the endings: next section
+        inEnding = false; pass = 1; start = i;
+      }
+    } else if (b.ending && b.ending.length && Math.min(...b.ending) === 1 && bars.some(x => x.ending && Math.max(...x.ending) > 1)) {
+      i++; continue;                                       // after D.C./D.S.: take the last ending
     }
     order.push(i);
-    if (b.repeatEnd && pass < b.repeatEnd) { pass++; i = start; inEnding = false; continue; } // jump back: not "leaving" the endings
-    if (b.repeatEnd && !b.ending) { pass = 1; start = i + 1; }
+    if (jumped && b.fine) break;                           // Fine: the end
+    if (jumped && b.toCoda && codaAt >= 0) { i = codaAt; continue; }
+    if (!jumped && b.jump) {                               // D.C. / D.S.
+      jumped = true; inEnding = false;
+      i = b.jump === 'ds' && segnoAt >= 0 ? segnoAt : 0;
+      continue;
+    }
+    if (!jumped) {
+      if (b.repeatEnd && pass < b.repeatEnd) { pass++; i = start; inEnding = false; continue; } // jump back: not "leaving" the endings
+      if (b.repeatEnd && !b.ending) { pass = 1; start = i + 1; }
+    }
     i++;
   }
   return order;
@@ -101,7 +119,7 @@ export function buildPerformance(model: ScoreModel): Performance {
         : n.slur === 'in' ? 1.0 : n.slur === 'end' ? 0.88 : 0.93;
       if (n.breath) f = Math.min(f, Math.max(0.5, 1 - 0.18 / Math.max(0.2, len)));
       // loudness: dynamics, accents, and a slight lean on the first beat of the bar
-      let vel = (n.vel ?? 0.62) + (n.strongAccent ? 0.2 : n.accent ? 0.13 : 0);
+      let vel = (n.vel ?? 0.62) + (n.strongAccent ? 0.14 : n.accent ? 0.09 : 0);
       if (Math.abs(n.beat - bar.beat) < 1e-6 && !n.accent && !n.strongAccent) vel += 0.03;
       vel = Math.min(1, vel);
       const roll = rollAt.get(n.beat * 1000 + (n.part ?? 0));
@@ -142,6 +160,19 @@ export function buildPerformance(model: ScoreModel): Performance {
   }
 
   out.sort((a, b) => a.t - b.t || a.midi - b.midi);
+  // Chords: several notes struck together shouldn't add up to a shout. Each note of a k-note
+  // chord is a little softer, so a 4-note piano chord sits with a single violin line.
+  for (let i = 0; i < out.length;) {
+    let j = i;
+    while (j < out.length && Math.abs(out[j].t - out[i].t) < 0.02) j++;
+    const byPart = new Map<number, PerfNote[]>();
+    for (let k = i; k < j; k++) { const list = byPart.get(out[k].part) ?? []; list.push(out[k]); byPart.set(out[k].part, list); }
+    for (const list of byPart.values()) if (list.length > 1) {
+      const f = Math.pow(1 / Math.sqrt(list.length), 0.7);
+      for (const n of list) n.vel *= f;
+    }
+    i = j;
+  }
   // legato: a note that starts right where the previous note of its part ends (for bowed slides)
   const lastEnd = new Map<number, { end: number; midi: number }>();
   for (const n of out) {

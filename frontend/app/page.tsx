@@ -2355,7 +2355,10 @@ export default function Home() {
             onAiMarks={placeAiMarks}
             canPick={!!measuresByPage}
             pickMode={playPick} onPickMode={setPlayPick}
-            pickedBar={pickedBar} onLoopBars={setLoopBars} />
+            pickedBar={pickedBar} onLoopBars={setLoopBars}
+            showBarNumbers={omrPrefs.showNumbers}
+            onToggleBarNumbers={() => setOmrPrefs({ ...omrPrefs, showNumbers: !omrPrefs.showNumbers })}
+            onOpenBars={() => setOmrOpen(true)} />
         </div>
       )}
 
