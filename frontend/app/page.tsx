@@ -489,6 +489,10 @@ export default function Home() {
 
   // Playback of the recognized score: the bar being played (local to this device).
   const [playingBar, setPlayingBar] = useState<number | null>(null);
+  // Playback: "click the score to play" mode, the bar picked there, and the looped bars
+  const [playPick, setPlayPick] = useState(false);
+  const [pickedBar, setPickedBar] = useState<{ n: number; shift: boolean; nonce: number } | null>(null);
+  const [loopBars, setLoopBars] = useState<{ from: number; to: number } | null>(null);
   const lastPlayedLineRef = useRef<string>('');
   // Keep the played bar on screen: scroll when playback moves to a new line of music (or page).
   function keepBarInView(n: number) {
@@ -2107,13 +2111,15 @@ export default function Home() {
               measuresByPage={measuresByPage}
               showMeasureNumbers={omrPrefs.showNumbers}
               highlightedMeasure={playingBar ?? (omrPrefs.showHighlight ? (omrState?.highlightedMeasure ?? null) : null)}
-              measureClickMode={omrPrefs.clickToHighlight && !!measuresByPage && !barDraft}
+              measureClickMode={(playPick || omrPrefs.clickToHighlight) && !!measuresByPage && !barDraft}
+              loopBars={loopBars}
+              showPlayhead={playingBar != null}
               barEdit={barDraft ? {
                 pages: barDraft, selected: barSel, splitMode: barSplit,
                 onSelect: setBarSel, onSplit: splitBar,
                 onResize: (page, i, box) => editPage(page, ms => ms.map((m, k) => (k === i ? box : m))),
               } : null}
-              onMeasureClick={handleMeasureClick}
+              onMeasureClick={(n, shift) => (playPick ? setPickedBar({ n, shift: !!shift, nonce: Date.now() }) : handleMeasureClick(n))}
               measureJump={measureJump}
               activeSymbol={activeSymbol}
               symbolEmForPage={symbolEmForPage}
@@ -2333,7 +2339,7 @@ export default function Home() {
 
       {/* Playback of the recognized score (above the page bar) */}
       {roomId && (isHost || omrState?.imported || (omrState?.hasMusicXml && (omrState.status === 'done' || omrState.partial))) && (
-        <div className="fixed left-1/2 -translate-x-1/2 z-40" style={{ bottom: 64 }}>
+        <div className="fixed left-1/2 -translate-x-1/2 z-40" style={{ bottom: 72 }}>
           <PlaybackBar roomId={roomId}
             ready={!!omrState?.hasMusicXml && (omrState.status === 'done' || !!omrState.partial)}
             version={`${omrState?.status}:${omrState?.measureCount ?? 0}`}
@@ -2345,7 +2351,10 @@ export default function Home() {
             keepInView={keepBarInView}
             onMarkOffNotes={markOffNotes}
             isHost={isHost}
-            onAiMarks={placeAiMarks} />
+            onAiMarks={placeAiMarks}
+            canPick={!!measuresByPage}
+            pickMode={playPick} onPickMode={setPlayPick}
+            pickedBar={pickedBar} onLoopBars={setLoopBars} />
         </div>
       )}
 

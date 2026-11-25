@@ -36,7 +36,9 @@ interface Props {
   showMeasureNumbers?: boolean;
   highlightedMeasure?: number | null;
   measureClickMode?: boolean;
-  onMeasureClick?: (n: number) => void;
+  onMeasureClick?: (n: number, shift?: boolean) => void;
+  loopBars?: { from: number; to: number } | null;   // bars being looped by playback (shaded)
+  showPlayhead?: boolean;                            // a line inside the playing bar (moved by PlaybackBar)
   // Music symbols: the symbol the Symbols tool stamps, its em size per page (fraction of page
   // height), the right-click / long-press menu, and leaving the tool with Esc.
   activeSymbol?: SymbolId | null;
@@ -266,7 +268,7 @@ export default function PDFViewer({
   onLaserMove, onLaserStop,
   scrollSyncEnabled, remoteScrollPosition, onScrollPositionChange,
   hiddenOwners,
-  measuresByPage, showMeasureNumbers, highlightedMeasure, measureClickMode, onMeasureClick, measureJump,
+  measuresByPage, showMeasureNumbers, highlightedMeasure, measureClickMode, onMeasureClick, measureJump, loopBars, showPlayhead,
   activeSymbol, symbolEmForPage, onSymbolPlaced, onSymbolMenu, onExitSymbolTool,
   onEraseStart, onEraseEnd, onUserScroll, onStepPage, navLabel,
   arrowStyle = 'end', textStyle = DEFAULT_TEXT_STYLE, onStampTemplate, templatePreview, onSelectionChange, barEdit,
@@ -1603,6 +1605,17 @@ export default function PDFViewer({
                   const flash = measureJump?.page === pageIndex ? ms.find(m => m.n === measureJump.n) : null;
                   return (
                     <g>
+                      {loopBars && ms.filter(m => m.n >= Math.min(loopBars.from, loopBars.to) && m.n <= Math.max(loopBars.from, loopBars.to)).map(m => (
+                        <rect key={`loop${m.n}`} x={m.x} y={m.y} width={m.w} height={m.h}
+                          fill="rgba(56,189,248,0.12)" stroke="rgba(56,189,248,0.6)" strokeWidth={1}
+                          vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+                      ))}
+                      {hl && showPlayhead && (
+                        // PlaybackBar moves this line along the bar as the music plays (data-x / data-w)
+                        <line data-playhead="" data-bar={hl.n} data-x={hl.x} data-w={hl.w}
+                          x1={hl.x} x2={hl.x} y1={hl.y} y2={hl.y + hl.h}
+                          stroke="#ea580c" strokeWidth={2.5} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }} />
+                      )}
                       {hl && (
                         <rect x={hl.x} y={hl.y} width={hl.w} height={hl.h}
                           fill="rgba(245,158,11,0.18)" stroke="#f59e0b" strokeWidth={2}
@@ -1617,7 +1630,9 @@ export default function PDFViewer({
                       {measureClickMode && onMeasureClick && ms.map(m => (
                         <rect key={m.n} className="omr-hit" x={m.x} y={m.y} width={m.w} height={m.h}
                           fill="transparent" style={{ pointerEvents: 'fill', cursor: 'pointer' }}
-                          onPointerDown={e => { e.stopPropagation(); onMeasureClick(m.n); }}>
+                          onPointerDown={e => e.stopPropagation()}
+                          // click, not pointerdown: on a phone, a finger that starts a scroll does not count as a tap
+                          onClick={e => { e.stopPropagation(); onMeasureClick(m.n, e.shiftKey); }}>
                           <title>{`Bar ${m.n}`}</title>
                         </rect>
                       ))}
