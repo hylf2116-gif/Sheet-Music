@@ -91,6 +91,14 @@ Open the Vercel address, then:
 | `ENABLE_OMR` | on | `false` |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | from `backend/.env` | from Supabase |
 
+## Score recognition engines
+
+- **homr** (AI, used first): faster and better at rhythm. Locally it runs from `~/homr-env`
+  (Python 3.12, `uv pip install "homr[cpu]" pypdfium2`); on Railway the Dockerfile installs it
+  in `/opt/homr`. Setting: `HOMR_PYTHON` (path to its python). `OMR_ENGINE=audiveris` turns it off.
+- **Audiveris** (fallback): used when homr is missing or fails on a score.
+- `OMR_PARALLEL`: how many recognitions run at once (default: cores ÷ 4).
+
 ## Limits built in
 
 - PDF uploads: 200 MB each, 20 per hour per IP; new rooms: 60 per hour per IP

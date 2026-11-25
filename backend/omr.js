@@ -315,7 +315,111 @@ async function partialResult(pageResults) {
   return { pages, measureCount: n, xml: mergeMovements(xmls) };
 }
 
+// ── AI recognition (homr) ───────────────────────────────────────────────────
+// homr reads each page with neural networks: faster than Audiveris and better at rhythm
+// (measured on a cello suite page: 26 s vs 46 s, all bars' rhythm right vs 94%).
+// homr_runner.py prints one JSON line per page with its MusicXML and bar boxes.
+const HOMR_PYTHON = process.env.HOMR_PYTHON || path.join(process.env.HOME || '', 'homr-env/bin/python');
+const HOMR_RUNNER = path.join(__dirname, 'homr_runner.py');
+function homrAvailable() {
+  return process.env.OMR_ENGINE !== 'audiveris' && fs.existsSync(HOMR_PYTHON) && fs.existsSync(HOMR_RUNNER);
+}
+
+/** Pages first..last in one homr process. Calls onPage({page, xml, measures, staffHeight}) as each is read. */
+function homrPages(pdfPath, workDir, first, last, onPage, timeoutMs) {
+  const { spawn } = require('child_process');
+  return new Promise((resolve, reject) => {
+    const child = spawn(HOMR_PYTHON, [HOMR_RUNNER, pdfPath, workDir, String(first), String(last)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('homr timed out')); }, timeoutMs);
+    let buf = '', errTail = '';
+    child.stdout.on('data', (d) => {
+      buf += d.toString();
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line.startsWith('{')) continue; // homr also prints plain text
+        try { const msg = JSON.parse(line); if (msg.page) onPage(msg); } catch {}
+      }
+    });
+    child.stderr.on('data', (d) => { errTail = (errTail + d.toString()).slice(-2000); });
+    child.on('error', (e) => { clearTimeout(timer); reject(e); });
+    child.on('close', (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(Object.assign(new Error(`homr exited with ${code}`), { stderr: errTail })); });
+  });
+}
+
+/**
+ * Recognize a PDF with homr. Page 1 first on its own (playback can start early), then the rest
+ * split over a few processes. Resolves with { pages, measureCount, xml } in the measures.json
+ * format; onPartial gets the same shape for pages 1..k as soon as they are ready in order.
+ * Throws if any page fails (the caller then falls back to Audiveris).
+ */
+async function runHomr(pdfPath, workDir, { onProgress, onPartial, timeoutMs = 30 * 60 * 1000 } = {}) {
+  let pages = 1;
+  try { pages = await pdfPageCount(pdfPath); } catch {}
+  fs.mkdirSync(workDir, { recursive: true });
+  const got = new Map();
+  const failed = [];
+  const publish = () => {
+    onProgress?.({ page: got.size, total: pages });
+    const part = joinHomrPages(got, pages, true);
+    if (part) onPartial?.(part);
+  };
+  const onPage = (msg) => {
+    if (msg.error) { failed.push(`page ${msg.page}: ${msg.error}`); return; }
+    got.set(msg.page, msg);
+    publish();
+  };
+  onProgress?.({ page: 0, total: pages });
+  await homrPages(pdfPath, workDir, 1, 1, onPage, timeoutMs);
+  if (pages > 1) {
+    const copies = Math.min(pages - 1, homrParallel());
+    const per = Math.ceil((pages - 1) / copies);
+    const jobs = [];
+    for (let c = 0; c < copies; c++) {
+      const a = 2 + c * per, b = Math.min(pages, a + per - 1);
+      if (a <= b) jobs.push(homrPages(pdfPath, path.join(workDir, `w${c}`), a, b, onPage, timeoutMs));
+    }
+    await Promise.all(jobs);
+  }
+  if (failed.length || got.size < pages) throw new Error(`homr could not read ${failed.join('; ') || 'some pages'}`);
+  return joinHomrPages(got, pages, false);
+}
+
+// homr processes at once: each uses several cores (OMR_PARALLEL overrides, like Audiveris).
+function homrParallel() {
+  const n = Number(process.env.OMR_PARALLEL);
+  if (n >= 1) return Math.floor(n);
+  return Math.max(1, Math.min(4, Math.floor(os.cpus().length / 4)));
+}
+
+/** Pages read so far → measures.json shape + one joined MusicXML. Partial: only pages 1..k in order. */
+function joinHomrPages(got, pages, partial) {
+  const out = [], xmls = [];
+  let n = 0;
+  for (let k = 1; k <= pages; k++) {
+    const p = got.get(k);
+    if (!p) { if (partial) break; continue; }
+    out.push({
+      page: k - 1,
+      measures: p.measures.map((m) => ({ n: ++n, x: m.x, y: m.y, w: m.w, h: m.h })),
+      ...(p.staffHeight ? { staffHeight: p.staffHeight } : {}),
+    });
+    xmls.push(p.xml);
+  }
+  if (!out.length) return null;
+  return { pages: out, measureCount: n, xml: renumberMeasures(mergeMovements(xmls)) };
+}
+
+// Bars numbered 1, 2, 3… through the whole score (each page's MusicXML starts again at 1).
+function renumberMeasures(xml) {
+  return xml.replace(/<part\s+id="([^"]+)"\s*>[\s\S]*?<\/part>/g, (part) => {
+    let k = 0;
+    return part.replace(/<measure\b([^>]*?)\snumber="[^"]*"/g, (m, attrs) => `<measure${attrs} number="${++k}"`);
+  });
+}
+
 module.exports = {
+  homrAvailable, runHomr,
   partialResult,
   audiverisAvailable, runAudiveris, runAudiverisFast, extractMeasures, readMusicXml, mergeMovements, AUDIVERIS_BIN,
 };

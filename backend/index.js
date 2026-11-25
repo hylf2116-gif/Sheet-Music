@@ -591,12 +591,12 @@ function omrStateFor(room) {
     return {
       ...base, status: 'done', pages: result.pages, measureCount: result.measureCount,
       confirmed: !!result.confirmed,
-      hasMusicXml: fs.existsSync(path.join(OMR_DIR, pdf.stem, 'score.mxl')),
+      hasMusicXml: ['score.xml', 'score.mxl'].some((f) => fs.existsSync(path.join(OMR_DIR, pdf.stem, f))),
     };
   }
   if (job?.status === 'error') return { ...base, status: 'error', error: job.error };
   if (!OMR_ENABLED) return { ...base, status: 'unavailable', reason: 'Measure detection is only available in the local version.' };
-  if (!omr.audiverisAvailable()) return { ...base, status: 'unavailable', reason: 'Audiveris is not installed on the server' };
+  if (!omr.homrAvailable() && !omr.audiverisAvailable()) return { ...base, status: 'unavailable', reason: 'No music recognition is installed on the server' };
   return { ...base, status: 'none' };
 }
 
@@ -629,15 +629,79 @@ async function pumpOmrQueue() {
 // usually ready by the time the lesson starts.
 function autoStartOmr(room) {
   const pdf = room && roomPdfFile(room);
-  if (!pdf || !OMR_ENABLED || !omr.audiverisAvailable()) return;
+  if (!pdf || !OMR_ENABLED || !(omr.homrAvailable() || omr.audiverisAvailable())) return;
   if (fs.existsSync(path.join(OMR_DIR, pdf.stem, 'measures.json'))) return; // already done
   startOmrJob(pdf);
+}
+
+// Same PDF recognized before (e.g. the same score in another room): reuse that result at once.
+// Results are indexed by the file's content hash in data/omr/_by-hash/<sha256> (holds the stem).
+const RESULT_FILES = ['measures.json', 'score.mxl', 'score.xml'];
+function pdfHash(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
+function reuseEarlierResult(pdf, outDir, hash) {
+  try {
+    const idx = path.join(OMR_DIR, '_by-hash', hash);
+    if (!fs.existsSync(idx)) return false;
+    const from = path.join(OMR_DIR, path.basename(fs.readFileSync(idx, 'utf8').trim()));
+    if (from === outDir || !fs.existsSync(path.join(from, 'measures.json'))) return false;
+    fs.mkdirSync(outDir, { recursive: true });
+    for (const f of RESULT_FILES) if (fs.existsSync(path.join(from, f))) fs.copyFileSync(path.join(from, f), path.join(outDir, f));
+    return true;
+  } catch { return false; }
+}
+function rememberResult(pdf, hash) {
+  try {
+    fs.mkdirSync(path.join(OMR_DIR, '_by-hash'), { recursive: true });
+    fs.writeFileSync(path.join(OMR_DIR, '_by-hash', hash), pdf.stem);
+  } catch {}
 }
 
 async function runOmrJob(pdf) {
   if (omrJobs[pdf.stem]) omrJobs[pdf.stem].startedAt = Date.now();
   const outDir = path.join(OMR_DIR, pdf.stem);
   const workDir = path.join(outDir, 'work');
+  let hash = null;
+  try { hash = pdfHash(pdf.file); } catch {}
+  if (hash && reuseEarlierResult(pdf, outDir, hash)) {
+    delete omrJobs[pdf.stem];
+    console.log(`OMR ${pdf.stem}: same PDF as an earlier score, result reused`);
+    broadcastOmrState(pdf.stem);
+    return;
+  }
+  // AI recognition first (faster, better rhythm); Audiveris if it is missing or fails.
+  if (omr.homrAvailable()) {
+    try {
+      fs.rmSync(workDir, { recursive: true, force: true });
+      const t0 = Date.now();
+      const result = await omr.runHomr(pdf.file, workDir, {
+        onProgress: (p) => { if (omrJobs[pdf.stem]) { omrJobs[pdf.stem].progress = p; broadcastOmrState(pdf.stem); } },
+        onPartial: (part) => {
+          const job = omrJobs[pdf.stem];
+          if (job?.status === 'running' && part.measureCount !== job.partial?.measureCount) {
+            job.partial = part;
+            broadcastOmrState(pdf.stem);
+          }
+        },
+      });
+      fs.writeFileSync(path.join(outDir, 'score.xml'), result.xml);
+      fs.rmSync(path.join(outDir, 'score.mxl'), { force: true }); // an older Audiveris result
+      fs.writeFileSync(path.join(outDir, 'measures.json'), JSON.stringify({ pages: result.pages, measureCount: result.measureCount, engine: 'homr' }));
+      fs.rmSync(workDir, { recursive: true, force: true });
+      delete omrJobs[pdf.stem];
+      console.log(`OMR (homr) took ${Math.round((Date.now() - t0) / 1000)} s for ${pdf.stem}: ${result.measureCount} measures`);
+      if (hash) rememberResult(pdf, hash);
+      broadcastOmrState(pdf.stem);
+      return;
+    } catch (err) {
+      console.error(`OMR (homr) failed for ${pdf.stem}, trying Audiveris:`, err.message, err.stderr?.slice(-400) || '');
+      if (omrJobs[pdf.stem]) delete omrJobs[pdf.stem].partial;
+    }
+  }
+  if (!omr.audiverisAvailable()) {
+    omrJobs[pdf.stem] = { status: 'error', error: 'Measure detection failed. This score may be hard to read automatically.' };
+    broadcastOmrState(pdf.stem);
+    return;
+  }
   try {
     fs.rmSync(workDir, { recursive: true, force: true });
     const t0 = Date.now();
@@ -668,6 +732,7 @@ async function runOmrJob(pdf) {
     fs.rmSync(workDir, { recursive: true, force: true });
     delete omrJobs[pdf.stem];
     console.log(`OMR done for ${pdf.stem}: ${result.measureCount} measures`);
+    if (hash) rememberResult(pdf, hash);
   } catch (err) {
     console.error(`OMR failed for ${pdf.stem}:`, err.message, err.stderr?.slice(-500) || '');
     omrJobs[pdf.stem] = { status: 'error', error: 'Measure detection failed. This score may be hard to read automatically.' };
@@ -678,10 +743,12 @@ async function runOmrJob(pdf) {
 app.get('/omr/:roomId/musicxml', (req, res) => {
   const room = rooms[req.params.roomId];
   const pdf = room && roomPdfFile(room);
-  const file = pdf && path.join(OMR_DIR, pdf.stem, 'score.mxl');
-  if (!file || !fs.existsSync(file)) return res.status(404).json({ error: 'No MusicXML available' });
+  const dir = pdf && path.join(OMR_DIR, pdf.stem);
+  const xmlFile = dir && path.join(dir, 'score.xml'), mxlFile = dir && path.join(dir, 'score.mxl');
   const name = (room.scoreName || 'score').replace(/[^\w\- ]+/g, '').trim() || 'score';
-  res.download(file, `${name}.mxl`);
+  if (xmlFile && fs.existsSync(xmlFile)) return res.download(xmlFile, `${name}.musicxml`);
+  if (!mxlFile || !fs.existsSync(mxlFile)) return res.status(404).json({ error: 'No MusicXML available' });
+  res.download(mxlFile, `${name}.mxl`);
 });
 
 // The recognized score as plain MusicXML text, for playback and score following in the browser.
@@ -1038,7 +1105,7 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room || !isHostSocket) return;
     const pdf = roomPdfFile(room);
-    if (!pdf || !OMR_ENABLED || !omr.audiverisAvailable()) return socket.emit('omr-state', omrStateFor(room));
+    if (!pdf || !OMR_ENABLED || !(omr.homrAvailable() || omr.audiverisAvailable())) return socket.emit('omr-state', omrStateFor(room));
     startOmrJob(pdf);
   });
 

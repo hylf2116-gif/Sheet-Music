@@ -1,4 +1,4 @@
-# Unino backend with score recognition (Audiveris) for Railway.
+# Unino backend with score recognition for Railway: homr (AI, used first) + Audiveris (fallback).
 # Railway builds this automatically when the service's root directory is `backend`.
 # If the build fails, Railway keeps the previous version running.
 
@@ -13,6 +13,17 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends /tmp/audiveris.deb \
  && rm -f /tmp/audiveris.deb \
  && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+# homr: AI music recognition in its own Python environment. `homr --init` downloads its models
+# during the build, so the first score doesn't wait for them.
+ARG HOMR_VERSION=0.7.1
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-venv libglib2.0-0 \
+ && python3 -m venv /opt/homr \
+ && /opt/homr/bin/pip install --no-cache-dir "homr[cpu]==${HOMR_VERSION}" pypdfium2 \
+ && /opt/homr/bin/homr --init \
+ && rm -rf /var/lib/apt/lists/*
+ENV HOMR_PYTHON=/opt/homr/bin/python
 
 # Where the server finds Audiveris; run Java without a screen, with a memory cap that fits a
 # small server (raise it on Railway with JAVA_TOOL_OPTIONS if large scores fail).

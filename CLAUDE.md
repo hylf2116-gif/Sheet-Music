@@ -53,6 +53,9 @@ Frontend (terminal 2):
   In the app: `SymbolPalette.tsx`, annotation type `symbol` {symbolId, x, y, w, h, color}; Symbols tool, right-click /
   long-press menu, keys 0–4 = fingering, S/M/L size scaled from OMR staff height when known.
 - IMSLP search/import exists (`GET /imslp/search`, `POST /imslp/import`).
+- OMR engine (2026-11-23): homr (AI) first via `backend/homr_runner.py` (Python in `~/homr-env`,
+  one JSON line per page: MusicXML + bar boxes snapped to real bar lines), Audiveris as fallback.
+  Results: `score.xml` (+ `measures.json`); identical PDFs reuse results via `data/omr/_by-hash/`.
 - OMR is integrated (2026-11-10, uncommitted): `backend/omr.js` runs `~/audiveris/Audiveris.app` (bundled Java) and
   reads measure boxes from the .omr file; results are cached in `backend/data/omr/<pdf-stem>/` (measures.json, score.mxl).
   The host starts it from the "Measures" panel (`OMRPanel.tsx`). It is slow: ~1.5–2 min per page.
