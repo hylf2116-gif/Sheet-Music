@@ -407,7 +407,31 @@ function joinHomrPages(got, pages, partial) {
     xmls.push(p.xml);
   }
   if (!out.length) return null;
-  return { pages: out, measureCount: n, xml: renumberMeasures(mergeMovements(xmls)) };
+  return { pages: out, measureCount: n, xml: renumberMeasures(joinPageParts(xmls)) };
+}
+
+/**
+ * Join pages whose part counts differ (e.g. a violin-only page, then violin + piano pages).
+ * The page with the most parts gives the part list; each page adds its bars to every part,
+ * and a part missing on a page gets empty bars there, so all parts stay lined up bar by bar.
+ */
+function joinPageParts(xmls) {
+  if (xmls.length <= 1) return xmls[0] || '';
+  const partsOf = (xml) => [...xml.matchAll(/<part\s+id="([^"]+)"\s*>([\s\S]*?)<\/part>/g)].map((m) => m[2]);
+  const pages = xmls.map(partsOf);
+  let base = 0;
+  pages.forEach((p, i) => { if (p.length > pages[base].length) base = i; });
+  const count = pages[base].length;
+  if (!count) return xmls[0];
+  const bodies = Array.from({ length: count }, () => []);
+  for (const page of pages) {
+    const bars = (page[0]?.match(/<measure\b/g) || []).length;
+    for (let k = 0; k < count; k++) {
+      bodies[k].push(page[k] ?? '<measure number="0"></measure>'.repeat(bars)); // empty bars: that part rests
+    }
+  }
+  let i = 0;
+  return xmls[base].replace(/(<part\s+id="[^"]+"\s*>)([\s\S]*?)(<\/part>)/g, (all, open, body, close) => open + bodies[i++].join('') + close);
 }
 
 // Bars numbered 1, 2, 3… through the whole score (each page's MusicXML starts again at 1).
@@ -419,7 +443,7 @@ function renumberMeasures(xml) {
 }
 
 module.exports = {
-  homrAvailable, runHomr,
+  homrAvailable, runHomr, joinPageParts,
   partialResult,
   audiverisAvailable, runAudiveris, runAudiverisFast, extractMeasures, readMusicXml, mergeMovements, AUDIVERIS_BIN,
 };

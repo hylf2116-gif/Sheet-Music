@@ -120,6 +120,8 @@ export function parseMusicXml(xml: string): ScoreModel {
     const measures = Array.from(part.children).filter(c => c.tagName === 'measure');
 
     measures.forEach((m, i) => {
+      // every part follows the first part's bar grid (a part that rests for a page stays in step)
+      if (barsByIndex[i]) barStart = barsByIndex[i].beat;
       let pos = 0;          // position inside the bar, in divisions
       let maxPos = 0;
       let lastStart = 0;    // start of the previous note (for chords)

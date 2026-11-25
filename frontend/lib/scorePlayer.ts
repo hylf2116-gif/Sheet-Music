@@ -18,6 +18,8 @@ export function soundForPart(score: ScoreModel, part: number): Sound {
   if (/violin|viola|\bvln|\bvla|fiddle|erhu|小提琴|中提琴|二胡|胡琴/.test(name)) return 'violin';
   if (/piano|keyboard|klavier|钢琴/.test(name)) return 'piano';
   const info = score.partInfo?.[part];
+  // "Voice": a single melody line (the AI reader's name for it) — a string sound by clef
+  if (/^voice\b/.test(name)) return info?.clef === 'F' ? 'cello' : 'violin';
   if (info) {
     if (info.staves >= 2) return 'piano';
     if (info.clef === 'F') return 'cello';

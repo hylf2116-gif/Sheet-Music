@@ -5,7 +5,7 @@ import { useT, useLang } from '../lib/i18n';
 import { backendUrl } from '../lib/config';
 import { parseMusicXml, type ScoreModel } from '../lib/musicxml';
 import { parseMidi } from '../lib/midi';
-import { ScorePlayer, type Instrument } from '../lib/scorePlayer';
+import { ScorePlayer, soundForPart, type Instrument } from '../lib/scorePlayer';
 import { ScoreFollower, type OffNote } from '../lib/scoreFollower';
 import { usePitch } from '../hooks/usePitch';
 
@@ -341,7 +341,9 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
 
   const hasSource = ready || !!imported;
   if (!hasSource && !isHost) return null;
-  const parts = score?.parts ?? [];
+  // Part names for people: the AI reader calls a melody line "Voice", so show the instrument instead
+  const parts = (score?.parts ?? []).map((name, i) =>
+    score && /^voice\b/i.test(name) ? t(soundForPart(score, i) === 'cello' ? 'Cello' : 'Violin') : name);
   const mismatch = score && barBoxCount && Math.abs(score.bars.length - barBoxCount) > 0
     ? t('This file has {a} bars, the PDF {b}: highlights may be off.', { a: score.bars.length, b: barBoxCount }) : '';
   const fileInput = (
