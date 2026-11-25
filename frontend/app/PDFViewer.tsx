@@ -1791,39 +1791,39 @@ export default function PDFViewer({
 
       {/* Floating bar: page arrows and score zoom */}
       {(
-        <div data-tour="nav" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-gray-900/75 backdrop-blur-md text-white rounded-full px-1.5 py-1.5 shadow-2xl">
+        <div data-tour="nav" className="cp-glass q-fade fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 rounded-full px-1.5 py-1">
           {pageMetas.length > 1 && (<>
           <button
             onClick={() => (onStepPage ? onStepPage(-1) : onPageChange(currentPage - 1))}
             disabled={!navLabel && currentPage === 0}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-25 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-full cp-btn"
             aria-label={t('Previous page')}
           >
             <ChevronLeft />
           </button>
-          <span className="text-[13px] font-medium tabular-nums px-3 select-none">
-            {currentPage + 1} <span className="text-white/50">/</span> {pageMetas.length}
-            {navLabel && <span className="ml-1.5 text-[10px] text-indigo-300 whitespace-nowrap">· {navLabel}</span>}
+          <span className="cp-serif text-[14px] tabular-nums px-2 select-none whitespace-nowrap">
+            {currentPage + 1} <span style={{ color: 'var(--cp-ink-3)' }}>/</span> {pageMetas.length}
+            {navLabel && <span className="ml-1.5 text-[10px] text-[var(--cp-live)] whitespace-nowrap">· {navLabel}</span>}
           </span>
           <button
             onClick={() => (onStepPage ? onStepPage(1) : onPageChange(currentPage + 1))}
             disabled={!navLabel && currentPage >= pageMetas.length - 1}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-25 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-full cp-btn"
             aria-label={t('Next page')}
           >
             <ChevronRight />
           </button>
-          <span className="w-px h-5 bg-white/20 mx-1" />
+          <span className="cp-sep w-px h-5 mx-1" />
           </>)}
           <button onClick={() => zoomStep(-1)} disabled={zoom <= ZOOM_MIN + 0.001}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-25 transition-colors text-lg leading-none"
+            className="w-8 h-8 flex items-center justify-center rounded-full cp-btn text-lg leading-none"
             aria-label={t('Zoom out')} title={t('Zoom out') + ' (⌘−)'}>−</button>
           <button onClick={() => zoomAt(1)} title={t('Fit width') + ' (⌘0)'} aria-label={t('Fit width')}
-            className="h-8 min-w-[52px] px-1.5 rounded-full hover:bg-white/15 text-[12px] font-medium tabular-nums transition-colors">
+            className="cp-btn h-8 min-w-[52px] px-1.5 rounded-full text-[12px] font-medium tabular-nums">
             {Math.round(zoom * 100)}%
           </button>
           <button onClick={() => zoomStep(1)} disabled={zoom >= ZOOM_MAX - 0.001}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-25 transition-colors text-lg leading-none"
+            className="w-8 h-8 flex items-center justify-center rounded-full cp-btn text-lg leading-none"
             aria-label={t('Zoom in')} title={t('Zoom in') + ' (⌘+)'}>+</button>
         </div>
       )}

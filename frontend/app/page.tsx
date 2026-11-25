@@ -133,19 +133,8 @@ function FBtn({ icon, active, onClick, title, amber, badge, dot }: {
 }) {
     return (
       <div style={{ position: 'relative' }}>
-        <button onClick={onClick} title={title} style={{
-          width: 36, height: 36, borderRadius: 10, border: 'none', cursor: 'pointer', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s, color 0.15s',
-          background: active
-            ? (amber ? 'rgba(245,158,11,0.22)' : 'rgba(99,102,241,0.22)')
-            : 'transparent',
-          color: active
-            ? (amber ? '#fbbf24' : '#818cf8')
-            : 'rgba(255,255,255,0.55)',
-        }}
-          onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.08)'; }}
-          onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-        >
+        <button onClick={onClick} title={title} aria-label={title} aria-pressed={active}
+          className="cp-btn w-10 h-10" style={active && amber ? { color: '#b45309', boxShadow: 'inset 0 0 0 1.2px #d97706' } : undefined}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9}
             strokeLinecap="round" strokeLinejoin="round" style={{ width: 17, height: 17 }}>
             {FC_ICONS[icon]}
@@ -164,7 +153,7 @@ function FBtn({ icon, active, onClick, title, amber, badge, dot }: {
         {dot && (
           <span style={{
             position: 'absolute', top: 2, right: 2, width: 7, height: 7,
-            background: '#f59e0b', borderRadius: 4, border: '1.5px solid rgba(18,18,26,0.84)',
+            background: '#c2410c', borderRadius: 4, border: '1.5px solid var(--cp-glass-strong)',
             pointerEvents: 'none',
           }} />
         )}
@@ -178,10 +167,9 @@ function FloatingCluster(p: FloatingClusterProps & { compact?: boolean }) {
   const [open, setOpen] = useState(false);
   if (p.compact && !open) {
     return (
-      <div style={{
+      <div className="cp-glass" style={{
         position: 'fixed', right: 12, bottom: 'calc(16px + env(safe-area-inset-bottom))', zIndex: 40,
-        background: 'rgba(18,18,26,0.84)', backdropFilter: 'blur(18px) saturate(1.6)',
-        borderRadius: 14, padding: 6, border: '1px solid rgba(255,255,255,0.09)', boxShadow: '0 8px 32px rgba(0,0,0,0.32)',
+        borderRadius: 18, padding: 5,
       }}>
         <FBtn icon="more" active={false} onClick={() => setOpen(true)} title={t('More tools')}
           badge={p.chatOpen ? 0 : p.chatUnread} />
@@ -189,25 +177,22 @@ function FloatingCluster(p: FloatingClusterProps & { compact?: boolean }) {
     );
   }
   return (
-    <div onClick={p.compact ? () => setOpen(false) : undefined} style={{
+    <div onClick={p.compact ? () => setOpen(false) : undefined} className={`cp-glass ${p.compact ? 'cp-pop' : 'q-right'}`} style={{
       position: 'fixed', right: p.compact ? 12 : p.rightOffset,
-      ...(p.compact ? { bottom: 'calc(16px + env(safe-area-inset-bottom))' } : { top: '50%', transform: 'translateY(-50%)' }),
-      transition: 'right 0.2s ease',
+      ...(p.compact ? { bottom: 'calc(16px + env(safe-area-inset-bottom))', transformOrigin: 'bottom right' } : { top: '50%', transform: 'translateY(-50%)' }),
       zIndex: 40, display: 'flex', flexDirection: 'column', gap: 2,
-      background: 'rgba(18,18,26,0.84)', backdropFilter: 'blur(18px) saturate(1.6)',
-      borderRadius: 14, padding: 6, border: '1px solid rgba(255,255,255,0.09)',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.32)',
+      borderRadius: 22, padding: 6,
     }}>
       <FBtn icon="pages"     active={p.thumbsOpen}          onClick={p.onToggleThumbs}      title={t('Page thumbnails')} />
       <FBtn icon="chat"      active={p.chatOpen}            onClick={p.onToggleChat}         title={t('Chat')} badge={p.chatOpen ? 0 : p.chatUnread} />
       <FBtn icon="metronome" active={p.metronomePanelOpen}  onClick={p.onToggleMetronome}    title={t('Metronome')} />
       <FBtn icon={p.bookmarkActive ? 'bookmarkFill' : 'bookmark'} active={p.bookmarkActive} onClick={p.onToggleBookmark} title={p.bookmarkActive ? t('Remove bookmark') : t('Bookmark this page')} amber />
-      <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 2px' }} />
+      <div className="cp-sep" style={{ height: 1, width: 24, margin: '4px auto' }} />
       <FBtn icon="tuner"     active={p.tunerOpen}           onClick={p.onToggleTuner}        title={t('Tuner')} />
       <FBtn icon="pitchlive" active={p.pitchLiveOpen}       onClick={p.onTogglePitchLive}    title={t('Live Pitch')} />
       <FBtn icon="layers"    active={p.layersOpen}          onClick={p.onToggleLayers}       title={t('Annotation layers')} dot={p.hasHiddenLayers} />
       <FBtn icon="measures"  active={p.omrOpen}             onClick={p.onToggleOmr}          title={t('Measures (bar numbers, highlight, jump)')} dot={p.omrRunning} />
-      <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 2px' }} />
+      <div className="cp-sep" style={{ height: 1, width: 24, margin: '4px auto' }} />
       {p.onArrange && <FBtn icon="arrange" active={false} onClick={p.onArrange} title={t('Arrange pages & play order')} dot={p.playOrderOn} />}
       <FBtn icon="download"  active={false}                 onClick={p.onExportPDF}          title={t('Export PDF')} />
       {p.compact && <FBtn icon="more" active onClick={() => setOpen(false)} title={t('Close')} />}
@@ -646,6 +631,22 @@ export default function Home() {
   // Phones and iPad portrait always use the top bar; side bars are too wide for them.
   const isPhone = usePhone();
   const isNarrow = useNarrow();
+  // Quiet mode (in a room): after a few seconds without touching anything the controls slide
+  // away so the score is clear; any movement, tap, scroll or key brings them back at once.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (stage !== 'room') { root.classList.remove('ui-idle'); return; }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const wake = () => {
+      root.classList.remove('ui-idle');
+      clearTimeout(timer);
+      timer = setTimeout(() => root.classList.add('ui-idle'), 3000);
+    };
+    const evs = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+    evs.forEach(e => window.addEventListener(e, wake, { passive: true }));
+    wake();
+    return () => { clearTimeout(timer); evs.forEach(e => window.removeEventListener(e, wake)); root.classList.remove('ui-idle'); };
+  }, [stage]);
   const toolbarPos: ToolbarPos = isNarrow ? 'top' : savedToolbarPos;
   useEffect(() => {
     const saved = localStorage.getItem(POS_KEY) as ToolbarPos | null;

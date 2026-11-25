@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { SymbolId } from './symbols';
 import { SYMBOL_LABELS } from './symbols';
 import SymbolPopover, { SymbolIcon, type SymbolSize } from './SymbolPalette';
@@ -170,6 +170,16 @@ export default function Toolbar(p: ToolbarProps) {
   const [fontMenuOpen, setFontMenuOpen] = useState(false);
   const tplBtnRef = useRef<HTMLButtonElement>(null);
   const [tplMenuOpen, setTplMenuOpen] = useState(false);
+  // Glass dock: the sliding outline under the chosen tool, and the tool's options panel
+  const dockRef = useRef<HTMLDivElement>(null);
+  const [pillAt, setPillAt] = useState<{ x: number; y: number } | null>(null);
+  const [optsOpen, setOptsOpen] = useState(false);
+  const [optsTop, setOptsTop] = useState(120);
+  useLayoutEffect(() => {
+    const btn = dockRef.current?.querySelector<HTMLElement>(`[data-tool="${p.activeTool}"]`);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- measured from the laid-out dock
+    setPillAt(btn ? { x: btn.offsetLeft, y: btn.offsetTop } : null);
+  }, [p.activeTool, p.pos, p.compact]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
     annotate: false, navigate: false, room: false, tools: false,
   });
@@ -182,6 +192,11 @@ export default function Toolbar(p: ToolbarProps) {
 
   function toggle(k: string) { setCollapsed(prev => ({ ...prev, [k]: !prev[k] })); }
 
+  // Desktop and iPad landscape: the Clear Paper glass room (tool dock left, capsule top).
+  // Its tool options open in a panel beside the dock, so they use the stacked (sidebar) rows.
+  const glass = p.pos === 'top' && !p.compact;
+  const rowTop = p.pos === 'top' && !glass;
+
   // ── Shared atoms ────────────────────────────────────────────────────────────
 
   function ToolBtn({ id, label: rawLabel }: { id: string; label: string }) {
@@ -190,7 +205,7 @@ export default function Toolbar(p: ToolbarProps) {
     const laser  = id === 'laser';
     const base   = 'transition-all duration-150 flex items-center justify-center';
 
-    if (p.pos !== 'top') {
+    if (!rowTop) {
       return (
         <button onClick={() => p.setActiveTool(id)} title={label} data-tour={id === 'pen' ? 'draw' : id === 'text' ? 'text' : undefined}
           className={`flex flex-col items-center gap-0.5 py-1.5 px-0.5 rounded-xl w-full ${base} ${
@@ -214,12 +229,12 @@ export default function Toolbar(p: ToolbarProps) {
   }
 
   function ColorRow() {
-    const dotSize = p.compact ? 26 : p.pos === 'top' ? 18 : 17;
+    const dotSize = p.compact ? 26 : rowTop ? 18 : 17;
     // Color by person: one color for all my marks.
     if (p.personColor) {
       if (!p.canPickPersonColor) {
         return (
-          <div className={`flex items-center gap-1.5 ${p.pos === 'top' ? 'shrink-0' : 'px-2 pt-1'}`}
+          <div className={`flex items-center gap-1.5 ${rowTop ? 'shrink-0' : 'px-2 pt-1'}`}
             title={t('Your color is set by the host')}>
             <span className="rounded-full shrink-0" style={{ width: dotSize, height: dotSize, backgroundColor: p.personColor,
               boxShadow: `0 0 0 2px white, 0 0 0 3.5px ${p.personColor}` }} />
@@ -228,7 +243,7 @@ export default function Toolbar(p: ToolbarProps) {
         );
       }
       return (
-        <div className={`flex items-center ${p.compact ? 'gap-2.5' : 'gap-1.5'} ${p.pos === 'top' ? 'shrink-0' : 'flex-wrap px-2 pt-1'}`}
+        <div className={`flex items-center ${p.compact ? 'gap-2.5' : 'gap-1.5'} ${rowTop ? 'shrink-0' : 'flex-wrap px-2 pt-1'}`}
           title={t('Your color (used for all your marks)')}>
           {PERSON_PALETTE.map(c => (
             <button key={c} onClick={() => p.onPickPersonColor?.(c)} aria-label={t('Your color')}
@@ -243,7 +258,7 @@ export default function Toolbar(p: ToolbarProps) {
       );
     }
     return (
-      <div className={`flex ${p.compact ? 'gap-2.5' : 'gap-1.5'} ${p.pos === 'top' ? 'shrink-0' : 'flex-wrap px-2 pt-1'}`}>
+      <div className={`flex ${p.compact ? 'gap-2.5' : 'gap-1.5'} ${rowTop ? 'shrink-0' : 'flex-wrap px-2 pt-1'}`}>
         {PRESET_COLORS.map(c => (
           <button key={c} onClick={() => p.setColor(c)} onMouseDown={keepFocus}
             className="rounded-full transition-transform hover:scale-110 shrink-0"
@@ -272,7 +287,7 @@ export default function Toolbar(p: ToolbarProps) {
   // Arrow: one head (→) or both (↔)
   function ArrowRow() {
     return (
-      <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'px-2 pb-1' : 'shrink-0'}`}>
+      <div className={`flex items-center gap-0.5 ${!rowTop ? 'px-2 pb-1' : 'shrink-0'}`}>
         {(['end', 'both'] as const).map(s => (
           <button key={s} onClick={() => p.setArrowStyle(s)} title={s === 'end' ? t('Single arrow') : t('Double arrow')}
             aria-label={s === 'end' ? t('Single arrow') : t('Double arrow')}
@@ -295,17 +310,17 @@ export default function Toolbar(p: ToolbarProps) {
       on ? 'bg-black/[0.08] text-gray-900' : 'text-gray-500 hover:bg-black/[0.04]'}`;
     const font = FONTS.find(f => f.id === s.font) ?? FONTS[0];
     return (
-      <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'flex-wrap px-2 pb-1.5' : 'shrink-0'}`}>
+      <div className={`flex items-center gap-0.5 ${!rowTop ? 'flex-wrap px-2 pb-1.5' : 'shrink-0'}`}>
         <button onMouseDown={keepFocus} onClick={() => set({ bold: !s.bold })} title={t('Bold')} aria-label={t('Bold')} aria-pressed={s.bold}
           className={btn(s.bold)}><span className="text-sm font-bold">B</span></button>
         <button onMouseDown={keepFocus} onClick={() => set({ italic: !s.italic })} title={t('Italic')} aria-label={t('Italic')} aria-pressed={s.italic}
           className={btn(s.italic)}><span className="text-sm italic" style={{ fontFamily: 'Georgia, serif' }}>I</span></button>
-        <span className={p.pos === 'top' ? 'w-px h-5 bg-black/[0.08] mx-1' : 'w-1'} />
+        <span className={rowTop ? 'w-px h-5 bg-black/[0.08] mx-1' : 'w-1'} />
         {TEXT_SIZES.map(z => (
           <button key={z.id} onMouseDown={keepFocus} onClick={() => set({ fontSize: z.size })} title={t('Size {s}', { s: z.id })}
             className={`${btn(Math.abs(s.fontSize - z.size) < 1e-6)} text-xs font-semibold`}>{z.id}</button>
         ))}
-        <span className={p.pos === 'top' ? 'w-px h-5 bg-black/[0.08] mx-1' : 'w-1'} />
+        <span className={rowTop ? 'w-px h-5 bg-black/[0.08] mx-1' : 'w-1'} />
         <div className="relative shrink-0">
           <button ref={fontBtnRef} onMouseDown={keepFocus} onClick={() => setFontMenuOpen(o => !o)} title={t('Font')} aria-label={t('Font')}
             className={`h-7 px-2 rounded-lg text-xs text-gray-700 hover:bg-black/[0.05] flex items-center gap-1 whitespace-nowrap ${p.compact ? 'h-10' : ''}`}
@@ -342,7 +357,7 @@ export default function Toolbar(p: ToolbarProps) {
   // Templates: ready-made teaching marks. Pick one, then click the score to place it.
   function TemplateRow() {
     // Top bar: one button with the chosen template that opens the full list (12 don't fit in a row).
-    if (p.pos === 'top') {
+    if (rowTop) {
       const cur = TEMPLATES.find(tp => tp.id === p.activeTemplate) ?? TEMPLATES[0];
       return (
         <div className="relative shrink-0">
@@ -391,10 +406,10 @@ export default function Toolbar(p: ToolbarProps) {
     const isHl = p.activeTool === 'highlight';
     const sizes = isHl ? HIGHLIGHTER_SIZES : STROKE_SIZES;
     return (
-      <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'px-2 pb-1' : 'shrink-0'}`}>
+      <div className={`flex items-center gap-0.5 ${!rowTop ? 'px-2 pb-1' : 'shrink-0'}`}>
         {sizes.map(s => (
           <button key={s.label} onClick={() => p.setStrokeWidth(s.w)} title={t(s.label)}
-            className={`rounded-lg flex items-center justify-center transition-colors shrink-0 ${p.compact ? 'w-10 h-10' : p.pos === 'top' ? 'w-7 h-7' : 'flex-1 h-7'} ${
+            className={`rounded-lg flex items-center justify-center transition-colors shrink-0 ${p.compact ? 'w-10 h-10' : rowTop ? 'w-7 h-7' : 'flex-1 h-7'} ${
               p.strokeWidth === s.w ? 'bg-black/[0.08]' : 'hover:bg-black/[0.04]'
             }`}>
             <span className={isHl ? 'rounded-sm' : 'rounded-full bg-gray-600'} style={{
@@ -410,12 +425,12 @@ export default function Toolbar(p: ToolbarProps) {
   // Highlighter opacity slider (10%–90%).
   function OpacityRow() {
     return (
-      <div className={`flex items-center gap-1.5 shrink-0 ${p.pos !== 'top' ? 'px-2 pb-1.5' : ''}`} title={t('Highlighter opacity')}>
+      <div className={`flex items-center gap-1.5 shrink-0 ${!rowTop ? 'px-2 pb-1.5' : ''}`} title={t('Highlighter opacity')}>
         <span className="text-[10px] text-gray-500 select-none">{t('Opacity')}</span>
         <input type="range" min={10} max={90} step={5} aria-label={t('Highlighter opacity')}
           value={Math.round(p.highlighterOpacity * 100)}
           onChange={e => p.setHighlighterOpacity(Number(e.target.value) / 100)}
-          className={p.pos === 'top' ? 'w-20' : 'flex-1 min-w-0'} style={{ accentColor: '#6366f1' }} />
+          className={rowTop ? 'w-20' : 'flex-1 min-w-0'} style={{ accentColor: '#6366f1' }} />
         <span className="text-[10px] text-gray-500 w-7 text-right tabular-nums select-none">{Math.round(p.highlighterOpacity * 100)}%</span>
       </div>
     );
@@ -426,7 +441,7 @@ export default function Toolbar(p: ToolbarProps) {
   function symbolRow() {
     const quick = [p.activeSymbol, ...p.recentSymbols.filter(s => s !== p.activeSymbol)].slice(0, 6);
     return (
-      <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'flex-wrap px-2 pb-1.5' : 'shrink-0'}`}>
+      <div className={`flex items-center gap-0.5 ${!rowTop ? 'flex-wrap px-2 pb-1.5' : 'shrink-0'}`}>
         {quick.map(id => (
           <button key={id} onClick={() => p.onPickSymbol(id)} title={t(SYMBOL_LABELS[id])} aria-label={t(SYMBOL_LABELS[id])}
             className={`h-7 px-1 rounded-lg flex items-center justify-center transition-colors ${
@@ -443,7 +458,7 @@ export default function Toolbar(p: ToolbarProps) {
           className="h-7 px-2 rounded-lg text-xs font-medium text-gray-600 hover:bg-black/[0.05]">
           {t('All|symbols')}
         </button>
-        <div className={p.pos === 'top' ? 'w-px h-5 bg-black/[0.08] mx-1' : 'w-full h-px bg-black/[0.05] my-1'} />
+        <div className={rowTop ? 'w-px h-5 bg-black/[0.08] mx-1' : 'w-full h-px bg-black/[0.05] my-1'} />
         {(['S', 'M', 'L'] as const).map(s => (
           <button key={s} onClick={() => p.setSymbolSize(s)} title={t('Size {s}', { s })}
             className={`w-7 h-7 rounded-lg text-xs font-semibold transition-colors ${
@@ -466,8 +481,8 @@ export default function Toolbar(p: ToolbarProps) {
   function ContextPanel() {
     if (p.activeTool === 'eraser') {
       return (
-        <div className={`flex items-center gap-0.5 ${p.pos !== 'top' ? 'mx-2 mb-2 rounded-xl overflow-hidden' : ''}`}
-          style={{ background: p.pos !== 'top' ? 'rgba(0,0,0,0.04)' : undefined }}>
+        <div className={`flex items-center gap-0.5 ${!rowTop ? 'mx-2 mb-2 rounded-xl overflow-hidden' : ''}`}
+          style={{ background: !rowTop ? 'rgba(0,0,0,0.04)' : undefined }}>
           {(['stroke', 'pixel'] as const).map(m => (
             <button key={m} onClick={() => p.setEraserMode(m)}
               className={`px-2.5 ${p.compact ? 'h-9 px-4 text-sm' : 'h-7'} rounded-lg text-xs font-medium transition-colors ${
@@ -481,7 +496,7 @@ export default function Toolbar(p: ToolbarProps) {
     }
     if (!isDraw) return null;
     if (p.activeTool === 'symbol') {
-      return p.pos === 'top'
+      return rowTop
         ? (<><Divider /><ColorRow /><Divider />{symbolRow()}</>)
         : (
           <div className="mx-2 mb-2 rounded-xl" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.05)' }}>
@@ -494,9 +509,9 @@ export default function Toolbar(p: ToolbarProps) {
     // Second row per tool: text style, arrow heads, or the template list instead of stroke sizes.
     const extra = (p.activeTool === 'text' || styleSelected) ? <TextStyleRow />
       : p.activeTool === 'template' ? <TemplateRow />
-      : p.activeTool === 'arrow' ? (<><StrokeRow />{p.pos === 'top' ? <Divider /> : null}<ArrowRow /></>)
-      : (<><StrokeRow />{p.activeTool === 'highlight' && (p.pos === 'top' ? <><Divider /><OpacityRow /></> : <OpacityRow />)}</>);
-    if (p.pos === 'top') {
+      : p.activeTool === 'arrow' ? (<><StrokeRow />{rowTop ? <Divider /> : null}<ArrowRow /></>)
+      : (<><StrokeRow />{p.activeTool === 'highlight' && (rowTop ? <><Divider /><OpacityRow /></> : <OpacityRow />)}</>);
+    if (rowTop) {
       return (
         <>
           <Divider />
@@ -516,7 +531,7 @@ export default function Toolbar(p: ToolbarProps) {
   }
 
   function Divider() {
-    return p.pos === 'top'
+    return rowTop
       ? <div className="w-px h-5 bg-black/[0.08] mx-1 shrink-0" />
       : <div className="h-px bg-black/[0.05] mx-3 my-1" />;
   }
@@ -640,6 +655,99 @@ export default function Toolbar(p: ToolbarProps) {
           </div>
         )}
       </div>
+    );
+  }
+
+  if (glass) {
+    const GROUPS = [['select', 'pen', 'highlight', 'eraser'], ['ellipse', 'line', 'arrow', 'text', 'symbol', 'template'], ['laser']];
+    const label = (id: string) => t(ANNOTATE_TOOLS.find(x => x.id === id)?.label ?? id);
+    const hasOptions = (id: string) => DRAW_TOOLS.has(id) || id === 'eraser';
+    const pick = (id: string, el: HTMLElement) => {
+      const r = el.getBoundingClientRect();
+      setOptsTop(Math.max(70, Math.min(window.innerHeight - 380, r.top - 24)));
+      if (p.activeTool === id) { setOptsOpen(o => !o); return; }
+      p.setActiveTool(id);
+      setOptsOpen(hasOptions(id));
+    };
+    const showOpts = optsOpen && hasOptions(p.activeTool) && (isDraw || p.activeTool === 'eraser');
+    const swatch = p.personColor ?? (p.activeTool === 'eraser' ? '#9ca3af' : p.color);
+    return (
+      <>
+        {/* Room capsule: home, pages, people, share */}
+        <div className="cp-glass q-top fixed z-[45] flex items-center gap-1 rounded-full pl-1.5 pr-1.5 py-1.5 select-none"
+          style={{ top: 'calc(12px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)', maxWidth: 'calc(100vw - 32px)' }}>
+          <button onClick={p.onGoHome} title={t('Home')} aria-label={t('Home')} className="cp-btn w-9 h-9 rounded-full"><LogoMark size={22} /></button>
+          {p.numPages > 1 && (
+            <>
+              <span className="cp-sep w-px h-5 mx-1" />
+              <button onClick={() => p.onPageChange(p.currentPage - 1)} disabled={p.currentPage === 0} aria-label={t('Previous page')} className="cp-btn w-8 h-8 rounded-full"><Icon name="chevronL" size={16} /></button>
+              <span className="cp-serif text-[15px] tabular-nums px-1 whitespace-nowrap">{p.currentPage + 1}<span style={{ color: 'var(--cp-ink-3)' }}> / {p.numPages}</span></span>
+              <button onClick={() => p.onPageChange(p.currentPage + 1)} disabled={p.currentPage >= p.numPages - 1} aria-label={t('Next page')} className="cp-btn w-8 h-8 rounded-full"><Icon name="chevronR" size={16} /></button>
+            </>
+          )}
+          <span className="cp-sep w-px h-5 mx-1" />
+          {p.isHost ? (
+            <>
+              {p.nickname && <button onClick={p.onRename} title={t('Change name')} className="cp-btn h-8 px-2.5 rounded-full text-[12px] max-w-[110px] truncate">👑 {p.nickname}</button>}
+              <span className="text-[11px] tabular-nums px-1" style={{ color: 'var(--cp-ink-3)' }} title={t('{n} in room', { n: p.participantCount })}>👥 {p.participantCount}</span>
+              <button onClick={p.onToggleScrollSync} aria-pressed={p.scrollSyncEnabled} title={p.scrollSyncEnabled ? t('Scroll sync on') : t('Scroll sync off')} className="cp-btn w-8 h-8 rounded-full"><Icon name="sync" size={14} /></button>
+              {p.raisedHands.length > 0 && (
+                <button onClick={p.onOpenHandsPanel} className="cp-chip h-8 px-2.5" style={{ color: '#b45309' }}>✋ {p.raisedHands.length}</button>
+              )}
+            </>
+          ) : (
+            <>
+              <button onClick={p.onToggleHand} aria-pressed={p.handRaised} className="cp-chip h-8">✋ {p.handRaised ? t('Lower') : t('Raise hand')}</button>
+              {p.nickname && <button onClick={p.onRename} title={t('Change name')} className="cp-btn h-8 px-2.5 rounded-full text-[12px] max-w-[110px] truncate">{p.nickname}</button>}
+            </>
+          )}
+          <button data-tour="share" onClick={p.onCopyLink}
+            className="h-9 px-4 rounded-full text-[13px] font-medium flex items-center gap-1.5 shrink-0 transition-transform active:scale-95 ml-1"
+            style={{ background: p.copied ? '#2f9e5b' : 'var(--cp-ink)', color: 'var(--cp-paper)' }}>
+            <Icon name={p.copied ? 'check' : 'link'} size={14} />{p.copied ? t('Copied') : t('Share')}
+          </button>
+          <PosMenu />
+        </div>
+
+        {/* Tool dock */}
+        <div ref={dockRef} className="cp-glass q-left fixed z-[45] flex flex-col items-center gap-0.5 p-1.5 rounded-[22px] select-none"
+          style={{ left: 'calc(12px + env(safe-area-inset-left))', top: '50%', transform: 'translateY(-50%)', maxHeight: 'calc(100vh - 140px)' }}>
+          {pillAt && <span className="cp-pill" style={{ left: 0, top: 0, width: 40, height: 40, transform: `translate(${pillAt.x}px, ${pillAt.y}px)`,
+            boxShadow: p.activeTool === 'laser' ? 'inset 0 0 0 1.2px #e5484d' : undefined }} />}
+          {GROUPS.map((g, gi) => (
+            <div key={gi} className="flex flex-col items-center gap-0.5">
+              {gi > 0 && <span className="cp-sep h-px w-6 my-1" />}
+              {g.map(id => (
+                <button key={id} data-tool={id} onClick={e => pick(id, e.currentTarget)} title={label(id)} aria-label={label(id)}
+                  data-tour={id === 'pen' ? 'draw' : id === 'text' ? 'text' : undefined}
+                  className="cp-btn w-10 h-10" style={p.activeTool === id ? { color: id === 'laser' ? '#e5484d' : 'var(--cp-ink)' } : undefined}>
+                  <Icon name={id} size={19} />
+                </button>
+              ))}
+            </div>
+          ))}
+          <span className="cp-sep h-px w-6 my-1" />
+          <button onClick={e => { if (hasOptions(p.activeTool)) { const r = e.currentTarget.getBoundingClientRect(); setOptsTop(Math.max(70, Math.min(window.innerHeight - 380, r.top - 120))); setOptsOpen(o => !o); } else { p.setActiveTool('pen'); setOptsOpen(true); } }}
+            title={t('Color and size')} aria-label={t('Color and size')} className="w-10 h-10 grid place-items-center rounded-xl transition-transform active:scale-90">
+            <span key={swatch} className="block w-[22px] h-[22px] rounded-full cp-pop" style={{ background: swatch, boxShadow: '0 0 0 2px var(--cp-glass-strong), 0 0 0 3px var(--cp-hair)' }} />
+          </button>
+          <button onClick={p.onUndo} disabled={!p.canUndo} title={t('Undo (Cmd/Ctrl+Z)')} aria-label={t('Undo')} className="cp-btn w-10 h-10"><Icon name="undo" size={17} /></button>
+          <button onClick={p.onRedo} disabled={!p.canRedo} title={t('Redo (Shift+Cmd/Ctrl+Z)')} aria-label={t('Redo')} className="cp-btn w-10 h-10"><Icon name="redo" size={17} /></button>
+          <button onClick={p.onClearAll} title={t('Clear all')} aria-label={t('Clear all')} className="cp-btn w-10 h-10 hover:!text-red-500"><Icon name="trash" size={17} /></button>
+        </div>
+
+        {/* The chosen tool's options, beside the dock */}
+        {showOpts && (
+          <>
+            <div className="fixed inset-0 z-[44]" onClick={() => setOptsOpen(false)} />
+            <div key={p.activeTool} className="cp-glass cp-solid cp-pop q-left fixed z-[46] rounded-[20px] pt-3 pb-1 w-[236px] select-none"
+              style={{ left: 'calc(72px + env(safe-area-inset-left))', top: optsTop, transformOrigin: 'left center', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto' }}>
+              <p className="cp-label px-4 pb-2">{label(p.activeTool)}</p>
+              <ContextPanel />
+            </div>
+          </>
+        )}
+      </>
     );
   }
 

@@ -9,7 +9,7 @@ import { buildPerformance, type Performance, type PerfNote } from './performance
 
 // 'auto' picks a sound for each part from its name / clef (a cello part plays as cello).
 export type Instrument = 'auto' | 'piano' | 'cello' | 'violin';
-type Sound = 'piano' | 'cello' | 'violin';
+export type Sound = 'piano' | 'cello' | 'violin';
 
 /** The sound a part should play with, from its name, or its clef and staves when unnamed. */
 export function soundForPart(score: ScoreModel, part: number): Sound {
@@ -96,6 +96,9 @@ export class ScorePlayer {
   playing = false;
   countIn = false;                         // one bar of clicks before the music starts
   mutedParts = new Set<number>();          // accompaniment: the student's part is silent
+  partSounds: Record<number, Sound> = {};  // a sound chosen for one part (else: by its name / clef)
+  partVolume: Record<number, number> = {}; // 0..1.5 per part (1 = as written)
+  private sounding: { part: number; from: number; to: number }[] = []; // for the "playing now" lights
   loop: { from: number; to: number } | null = null; // performance seconds; playback repeats this range
   onBar: (bar: number) => void = () => {};
   onEnd: () => void = () => {};
@@ -137,8 +140,22 @@ export class ScorePlayer {
     return ctx;
   }
 
+  /** The sound each part plays with right now (what the mixer shows). */
+  soundsByPart(): Sound[] {
+    return (this.score.parts ?? ['']).map((_, i) => this.soundOf(i));
+  }
+  /** Parts with a note sounding at this moment (as heard). */
+  activeParts(): Set<number> {
+    const ctx = this.ctx, out = new Set<number>();
+    if (!ctx || !this.playing) return out;
+    const now = ctx.currentTime - (ctx.outputLatency || 0) - (ctx.baseLatency || 0);
+    for (const v of this.sounding) if (v.from <= now && now < v.to) out.add(v.part);
+    this.sounding = this.sounding.filter(v => v.to > now - 1);
+    return out;
+  }
+
   private soundOf(part: number): Sound {
-    return this.instrument === 'auto' ? soundForPart(this.score, part) : this.instrument;
+    return this.partSounds[part] ?? (this.instrument === 'auto' ? soundForPart(this.score, part) : this.instrument);
   }
 
   /** Start from a performance time (seconds). Loads the recordings first if needed. */
@@ -231,6 +248,7 @@ export class ScorePlayer {
 
   stop() {
     this.run++;
+    this.sounding = [];
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     cancelAnimationFrame(this.raf);
@@ -298,7 +316,11 @@ export class ScorePlayer {
       const n = notes[this.nextIndex];
       const at = this.startTime + (n.t - this.startT) / sp;
       if (at > horizon) break;
-      if (at >= ctx.currentTime - 0.02 && !this.mutedParts.has(n.part)) this.voice(n, at, Math.max(0.05, n.dur / sp));
+      if (at >= ctx.currentTime - 0.02 && !this.mutedParts.has(n.part) && (this.partVolume[n.part] ?? 1) > 0) {
+        const d = Math.max(0.05, n.dur / sp);
+        this.voice(n, at, d);
+        this.sounding.push({ part: n.part, from: at, to: at + d });
+      }
       this.nextIndex++;
     }
     this.voices = this.voices.filter(v => v.end > ctx.currentTime);
@@ -316,7 +338,7 @@ export class ScorePlayer {
     const set = this.samples.get(sound);
     if (!set || !Object.values(set).some(l => l.length)) { this.synthVoice(n, at, dur, sound); return; }
     const gain = ctx.createGain();
-    const level = ScorePlayer.levelOf(n.vel);
+    const level = ScorePlayer.levelOf(n.vel) * (this.partVolume[n.part] ?? 1);
     const nodes: AudioScheduledSourceNode[] = [];
     let end: number;
 

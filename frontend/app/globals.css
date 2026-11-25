@@ -407,3 +407,101 @@ body {
   background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; color: #f4efe6; outline: none;
 }
 .uplay-input:focus { border-color: rgba(232, 196, 138, 0.6); }
+
+@layer components {
+/* ── Clear Paper: liquid glass with ink (the room's controls) ───────────────────
+   Nearly transparent glass with a bright rim, ink-black accents, hairlines, serif numerals.
+   Used by the tool dock, the room capsule, the panels rail and the player. */
+:root {
+  --cp-glass: rgba(255, 255, 255, 0.34);
+  --cp-glass-strong: rgba(255, 255, 255, 0.82);
+  --cp-rim: rgba(255, 255, 255, 0.95);
+  --cp-hair: rgba(29, 27, 24, 0.16);
+  --cp-shade: rgba(30, 25, 18, 0.16);
+  --cp-ink: #1d1b18;
+  --cp-ink-2: #6b645a;
+  --cp-ink-3: #a29a8e;
+  --cp-wash: rgba(29, 27, 24, 0.06);
+  --cp-on: rgba(29, 27, 24, 0.08);
+  --cp-live: #c2410c;
+  --cp-paper: #fbf9f5;
+  --cp-spring: cubic-bezier(0.34, 1.45, 0.55, 1);
+  --cp-ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --cp-serif: var(--font-fraunces), Georgia, "Times New Roman", serif;
+}
+[data-theme="dark"] {
+  --cp-glass: rgba(26, 24, 21, 0.74);
+  --cp-glass-strong: rgba(58, 54, 48, 0.9);
+  --cp-rim: rgba(255, 255, 255, 0.22);
+  --cp-hair: rgba(255, 255, 255, 0.14);
+  --cp-shade: rgba(0, 0, 0, 0.45);
+  --cp-ink: #f3eee6;
+  --cp-ink-2: #d9d2c7;
+  --cp-ink-3: #a39b8f;
+  --cp-wash: rgba(255, 255, 255, 0.07);
+  --cp-on: rgba(255, 255, 255, 0.12);
+  --cp-paper: #1d1b18;
+}
+.cp-glass { position: relative; } /* utilities (fixed, absolute, hidden…) are a later layer, so they still win */
+.cp-glass {
+  isolation: isolate;
+  color: var(--cp-ink);
+  background: var(--cp-glass);
+  -webkit-backdrop-filter: blur(16px) saturate(200%) brightness(1.05);
+  backdrop-filter: blur(16px) saturate(200%) brightness(1.05);
+  box-shadow: inset 0 1.5px 0 var(--cp-rim), inset 0 0 0 0.5px var(--cp-rim), 0 0 0 0.5px var(--cp-hair), 0 16px 40px -18px var(--cp-shade), 0 1px 2px var(--cp-shade);
+}
+.cp-glass::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: linear-gradient(160deg, rgba(255,255,255,.55) 0%, rgba(255,255,255,.08) 32%, rgba(255,255,255,0) 55%, rgba(255,255,255,.18) 100%);
+}
+[data-theme="dark"] .cp-glass::before { opacity: 0.25; }
+/* menus and popovers: a little more solid so their text is always easy to read */
+.cp-glass.cp-solid { background: var(--cp-glass-strong); }
+.cp-btn {
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  color: var(--cp-ink-2); border-radius: 12px;
+  transition: color .2s, background .2s, box-shadow .25s, transform .35s var(--cp-spring);
+}
+.cp-btn:hover { color: var(--cp-ink); background: var(--cp-wash); }
+.cp-btn:active { transform: scale(0.88); }
+.cp-btn:disabled { opacity: .3; pointer-events: none; }
+.cp-btn[aria-pressed="true"], .cp-btn.cp-on { color: var(--cp-ink); background: transparent; box-shadow: inset 0 0 0 1.2px var(--cp-ink); }
+.cp-chip {
+  height: 34px; padding: 0 12px; border-radius: 999px; display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  font-size: 12.5px; font-weight: 500; color: var(--cp-ink-2); background: var(--cp-wash); white-space: nowrap;
+  transition: color .2s, background .25s, box-shadow .25s, transform .35s var(--cp-spring);
+}
+.cp-chip:hover { color: var(--cp-ink); }
+.cp-chip:active { transform: scale(0.92); }
+.cp-chip[aria-pressed="true"] { color: var(--cp-ink); background: transparent; box-shadow: inset 0 0 0 1.2px var(--cp-ink); }
+.cp-chip.cp-rose[aria-pressed="true"] { color: #c0313a; box-shadow: inset 0 0 0 1.2px #e5484d; background: rgba(229,72,77,.08); }
+.cp-sep { background: var(--cp-hair); flex-shrink: 0; }
+.cp-serif { font-family: var(--cp-serif); font-weight: 500; }
+.cp-input { background: var(--cp-wash); border: 0.5px solid var(--cp-hair); border-radius: 10px; color: var(--cp-ink); outline: none; }
+.cp-input:focus { border-color: var(--cp-ink); }
+.cp-label { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--cp-ink-3); }
+/* the sliding "selected" outline in the tool dock */
+.cp-pill { position: absolute; border-radius: 12px; box-shadow: inset 0 0 0 1.2px var(--cp-ink); pointer-events: none;
+  transition: transform .5s var(--cp-spring), width .4s var(--cp-spring), height .4s var(--cp-spring), opacity .2s; }
+/* popovers open with a soft spring from where they come from */
+@keyframes cpPop { from { opacity: 0; transform: scale(.9); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+.cp-pop { animation: cpPop .42s var(--cp-spring) both; }
+@keyframes cpLive { 0%,100% { box-shadow: 0 0 0 0 rgba(194,65,12,.0); } 50% { box-shadow: 0 0 10px 1px rgba(194,65,12,.55); } }
+
+/* ── Quiet mode: after a few seconds without touching anything, the room's controls slide
+   away so the score is clear; any movement, tap or key brings them back. ── */
+.q-left, .q-right, .q-top, .q-bottom { transition: transform .55s var(--cp-spring), opacity .35s var(--cp-ease); }
+html.ui-idle .q-left   { transform: translate(-130%, -50%) !important; opacity: 0; pointer-events: none; }
+html.ui-idle .q-right  { transform: translate(130%, -50%) !important;  opacity: 0; pointer-events: none; }
+html.ui-idle .q-top    { transform: translate(-50%, -160%) !important; opacity: 0; pointer-events: none; }
+html.ui-idle .q-fade { opacity: 0; pointer-events: none; }
+.q-fade { transition: opacity .35s var(--cp-ease); }
+html.ui-idle .q-bottom-extra { opacity: 0; max-width: 0 !important; padding: 0 !important; margin: 0 !important; overflow: hidden; pointer-events: none; }
+.q-bottom-extra { transition: opacity .3s var(--cp-ease), max-width .5s var(--cp-spring); max-width: 1200px; }
+@media (prefers-reduced-motion: reduce) {
+  .q-left, .q-right, .q-top, .q-bottom, .q-bottom-extra, .cp-pill, .cp-btn, .cp-chip { transition-duration: .01ms !important; }
+  .cp-pop { animation: none; }
+}
+
+}
