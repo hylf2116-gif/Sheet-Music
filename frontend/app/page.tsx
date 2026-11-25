@@ -38,6 +38,7 @@ import { useT, type TFunc } from '../lib/i18n';
 import { LogoMark } from './Logo';
 import PlaybackBar from './PlaybackBar';
 import FirstTimeGuide from './FirstTimeGuide';
+import { uid } from '../lib/uid';
 import Tour, { type TourStep } from './Tour';
 import type { BarBox } from './PDFViewer';
 import { TEMPLATES, DEFAULT_TEXT_STYLE, type TextStyle } from '../lib/annotationStyle';
@@ -86,11 +87,11 @@ function getOrCreateClientId(): string {
   try {
     const stored = localStorage.getItem('unino_client_id');
     if (stored) return stored;
-    const id = crypto.randomUUID();
+    const id = uid();
     localStorage.setItem('unino_client_id', id);
     return id;
   } catch {
-    return crypto.randomUUID();
+    return uid();
   }
 }
 const OWNER_COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16'];
@@ -505,7 +506,7 @@ export default function Home() {
         const m = pg.measures.find(mm => mm.n === bar);
         if (!m) continue;
         handleAnnotationAdd({
-          id: crypto.randomUUID(), type: 'text', page: pg.page,
+          id: uid(), type: 'text', page: pg.page,
           x: m.x + 0.005, y: Math.max(0.02, m.y - 0.004), text: labels.slice(0, 3).join('  '),
           color: myPersonColor ?? '#f97316', fontSize: 0.018, bold: true,
         });
@@ -525,12 +526,12 @@ export default function Home() {
         const k = perBar.get(mk.bar) ?? 0;
         perBar.set(mk.bar, k + 1);
         handleAnnotationAdd({
-          id: crypto.randomUUID(), type: 'text', page: pg.page,
+          id: uid(), type: 'text', page: pg.page,
           x: m.x + 0.005, y: Math.max(0.02, m.y - 0.004 - k * 0.02), text: '✦ ' + mk.text,
           color: myPersonColor ?? '#7c3aed', fontSize: 0.016, bold: k === 0,
         });
         if (mk.kind === 'difficult' && k === 0) {
-          handleAnnotationAdd({ id: crypto.randomUUID(), type: 'highlight', page: pg.page, x: m.x, y: m.y, w: m.w, h: m.h, color: '#c4b5fd' });
+          handleAnnotationAdd({ id: uid(), type: 'highlight', page: pg.page, x: m.x, y: m.y, w: m.w, h: m.h, color: '#c4b5fd' });
         }
         break;
       }
@@ -841,7 +842,7 @@ export default function Home() {
   }
 
   function addToast(msg: string, onClick?: () => void) {
-    const id = crypto.randomUUID();
+    const id = uid();
     setToasts(prev => [...prev, { id, msg, onClick }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
   }
@@ -1348,7 +1349,17 @@ export default function Home() {
   }
 
   function copyLink() {
-    navigator.clipboard.writeText(`${window.location.origin}/?room=${roomId}`);
+    const link = `${window.location.origin}/?room=${roomId}`;
+    // navigator.clipboard only exists on secure pages (https / localhost); on an iPad using the
+    // home-network address, copy through a hidden text box instead.
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(link).catch(() => {});
+    else {
+      const ta = document.createElement('textarea');
+      ta.value = link; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch {}
+      ta.remove();
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -1480,7 +1491,7 @@ export default function Home() {
   }
   function stampTemplate(page: number, x: number, y: number) {
     beginHistoryBatch();
-    for (const m of templateMarks(x, y)) handleAnnotationAdd({ ...m, id: crypto.randomUUID(), page });
+    for (const m of templateMarks(x, y)) handleAnnotationAdd({ ...m, id: uid(), page });
     endHistoryBatch();
   }
 

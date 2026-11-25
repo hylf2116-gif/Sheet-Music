@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useT, useLang } from '../lib/i18n';
+import { uid } from '../lib/uid';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -671,7 +672,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
   function savePreset() {
     if (!presetName.trim()) return;
     const p: Preset = {
-      id: crypto.randomUUID(), name: presetName.trim(),
+      id: uid(), name: presetName.trim(),
       bpm, beatsPerBar, denominator, subdivision,
       accents: [...accents] as AccentLevel[], soundType,
     };

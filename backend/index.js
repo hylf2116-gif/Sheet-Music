@@ -79,7 +79,16 @@ const OMR_ENABLED = process.env.ENABLE_OMR !== 'false';
 const app = express();
 // Behind a hosting proxy (HTTPS is handled by the host): trust it for the real client IP.
 app.set('trust proxy', 1);
-app.use(cors({ origin: FRONTEND_ORIGINS }));
+// Local version (no FRONTEND_ORIGIN set): also let other devices on the same home network in,
+// e.g. an iPad opening http://192.168.1.20:3000. Online, only the configured address is allowed.
+const LAN_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\]|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|[\w-]+\.local):3000$/;
+function originAllowed(origin) {
+  if (!origin) return true;                                // same-origin / tools
+  if (FRONTEND_ORIGINS.includes(origin.replace(/\/+$/, ''))) return true;
+  return !process.env.FRONTEND_ORIGIN && LAN_ORIGIN.test(origin);
+}
+const corsOrigin = (origin, cb) => cb(null, originAllowed(origin));
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json({ limit: '1mb' }));
 
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
@@ -231,7 +240,7 @@ const upload = multer({
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: FRONTEND_ORIGINS, methods: ['GET', 'POST'] },
+  cors: { origin: corsOrigin, methods: ['GET', 'POST'] },
   maxHttpBufferSize: 2e6, // largest single message (a long pen stroke is well below this)
 });
 
@@ -1343,6 +1352,6 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Allowed website(s): ${FRONTEND_ORIGINS.join(', ')}`);
+  console.log(`Allowed website(s): ${FRONTEND_ORIGINS.join(', ')}${process.env.FRONTEND_ORIGIN ? '' : ' + devices on this home network (port 3000)'}`);
   console.log(`Data folder: ${DATA_DIR} | uploads: ${UPLOADS_DIR} | OMR: ${OMR_ENABLED ? 'on' : 'off'}`);
 });

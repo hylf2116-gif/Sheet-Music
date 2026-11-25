@@ -451,6 +451,7 @@ export const ZH: Record<string, string> = {
   'Flute': '长笛',
   'Clarinet': '单簧管',
   'Trumpet': '小号',
+  'The microphone only works on a secure page (https), or on this computer at localhost.': '麦克风只能在安全网页（https）上使用，或在这台电脑上用 localhost 打开。',
   'Auto (by part)': '自动（按声部）',
   'Erhu': '二胡',
   'Voice': '人声',

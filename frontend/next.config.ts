@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
+  // Development: let iPads / phones on the same home network load the page
+  // (e.g. http://192.168.0.145:3000). Has no effect on the online (production) site.
+  allowedDevOrigins: ['192.168.*.*', '10.*.*.*', '172.16.*.*', '*.local'],
 };
 
 export default nextConfig;

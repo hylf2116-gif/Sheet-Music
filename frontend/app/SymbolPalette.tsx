@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { SYMBOL_DEFS, SYMBOL_GROUPS, SYMBOL_LABELS, type SymbolId } from './symbols';
 import { useT } from '../lib/i18n';
+import { uid } from '../lib/uid';
 
 export type SymbolSize = 'S' | 'M' | 'L';
 // Lesson markings are drawn larger than engraved print, so even S is above print size.
@@ -30,7 +31,7 @@ export function makeSymbolAnnotation(
   const w = Math.max((def.bw / def.bh) * h * asp, 0.004);
   const x = Math.min(Math.max(cx - w / 2, 0), Math.max(1 - w, 0));
   const y = Math.min(Math.max(cy - h / 2, 0), Math.max(1 - h, 0));
-  return { id: crypto.randomUUID(), type: 'symbol', symbolId, page, x, y, w, h, color };
+  return { id: uid(), type: 'symbol', symbolId, page, x, y, w, h, color };
 }
 
 // The symbol drawn into a box (x, y, w, h) inside a parent SVG.

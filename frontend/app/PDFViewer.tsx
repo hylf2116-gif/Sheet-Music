@@ -5,6 +5,7 @@ import type { SymbolId } from './symbols';
 import { SymbolShape, makeSymbolAnnotation, isSymbolId } from './SymbolPalette';
 import { useT } from '../lib/i18n';
 import { fontCss, estimateEms, arrowHead, arrowHeadLength, DEFAULT_TEXT_STYLE, type TextStyle } from '../lib/annotationStyle';
+import { uid } from '../lib/uid';
 
 interface Props {
   pdfUrl: string;
@@ -344,7 +345,7 @@ export default function PDFViewer({
     }
     if (!text) return;
     onAnnotationAdd({
-      id: crypto.randomUUID(), type: 'text', page: te.page, x: te.x, y: te.y, text, color,
+      id: uid(), type: 'text', page: te.page, x: te.x, y: te.y, text, color,
       fontSize: textStyle.fontSize, ...(textStyle.bold ? { bold: true } : {}), ...(textStyle.italic ? { italic: true } : {}),
       ...(textStyle.font !== 'sans' ? { font: textStyle.font } : {}),
     });
@@ -1018,7 +1019,7 @@ export default function PDFViewer({
         if (segs === null) continue;
         eraseDelete(a.id);
         segs.forEach(pts => eraseAdd({
-          id: crypto.randomUUID(), type: 'pen', page: pageIndex,
+          id: uid(), type: 'pen', page: pageIndex,
           points: pts, color: a.color, strokeWidth: a.strokeWidth,
           ...(a.highlighter ? { highlighter: true, opacity: a.opacity } : {}),
           ownerId: a.ownerId, _skipUndo: true,
@@ -1027,7 +1028,7 @@ export default function PDFViewer({
         const pieces = clipHighlight(a, from, to, r, aspect);
         if (pieces === null) continue;
         eraseDelete(a.id);
-        pieces.forEach(piece => eraseAdd({ ...piece, id: crypto.randomUUID(), ownerId: a.ownerId, _skipUndo: true }));
+        pieces.forEach(piece => eraseAdd({ ...piece, id: uid(), ownerId: a.ownerId, _skipUndo: true }));
       } else if (path.some(p => shapeTouched(a, p.x, p.y, r + outlineHalf(a, meta.width), aspect))) {
         eraseDelete(a.id);
       }
@@ -1316,11 +1317,11 @@ export default function PDFViewer({
     if (isFreehand && currentPoints.length > 1) {
       // A highlighter stroke is a pen stroke with opacity, so move/resize/erase/sync all work unchanged.
       onAnnotationAdd({
-        id: crypto.randomUUID(), type: 'pen', page: pageIndex, points: currentPoints, color, strokeWidth,
+        id: uid(), type: 'pen', page: pageIndex, points: currentPoints, color, strokeWidth,
         ...(activeTool === 'highlight' ? { highlighter: true, opacity: highlighterOpacity } : {}),
       });
     } else if (preview) {
-      onAnnotationAdd({ ...preview, id: crypto.randomUUID() });
+      onAnnotationAdd({ ...preview, id: uid() });
     }
     setDrawing(false); setStart(null); setCurrentPoints([]); setPreview(null);
   }

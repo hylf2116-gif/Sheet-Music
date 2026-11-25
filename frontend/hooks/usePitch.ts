@@ -79,7 +79,9 @@ export function usePitch(
         if (!cancelled) {
           const name = err instanceof Error ? err.name : '';
           setError(
-            name === 'NotAllowedError' || name === 'PermissionDeniedError'
+            typeof window !== 'undefined' && !window.isSecureContext
+              ? 'The microphone only works on a secure page (https), or on this computer at localhost.'
+              : name === 'NotAllowedError' || name === 'PermissionDeniedError'
               ? 'Microphone access denied. Please allow mic access and try again.'
               : 'Could not access the microphone. Check that no other app is using it.',
           );
