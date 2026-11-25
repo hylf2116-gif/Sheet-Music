@@ -34,7 +34,23 @@ export function soundForPart(score: ScoreModel, part: number): Sound {
   return 'piano';
 }
 
-interface SampleSet { [layer: string]: { midi: number; buf: AudioBuffer }[] }
+// off: where the note really starts in the recording (s); norm: gain that evens out its loudness
+interface Sample { midi: number; buf: AudioBuffer; off: number; norm: number }
+interface SampleSet { [layer: string]: Sample[] }
+
+/** Measure a recording: when its sound starts (so the note lands on the beat, not late) and how
+ *  loud its steady part is (so neighbouring notes don't jump in volume). */
+function analyse(buf: AudioBuffer): { off: number; level: number } {
+  const x = buf.getChannelData(0), sr = buf.sampleRate, hop = Math.round(sr * 0.005);
+  const env: number[] = [];
+  for (let i = 0; i + hop <= x.length; i += hop) { let m = 0; for (let k = i; k < i + hop; k++) m = Math.max(m, Math.abs(x[k])); env.push(m); }
+  const peak = Math.max(...env, 1e-6);
+  const first = env.findIndex(v => v > peak * 0.12);
+  const off = Math.max(0, (first < 0 ? 0 : first) * hop / sr - 0.01);
+  const a = Math.floor((off + 0.4) * sr / hop), b = Math.min(env.length, Math.floor((off + 1.6) * sr / hop));
+  let sum = 0; for (let i = a; i < b; i++) sum += env[i];
+  return { off, level: b > a ? sum / (b - a) : peak };
+}
 
 // Recordings are shared by every player on the page (decoded once per instrument).
 const loaded = new Map<string, Promise<SampleSet | null>>();
@@ -49,10 +65,17 @@ function loadSamples(ctx: AudioContext, inst: 'piano' | 'cello' | 'violin'): Pro
       if (!layers) return null;
       const set: SampleSet = {};
       await Promise.all(Object.entries(layers).map(async ([layer, files]) => {
-        set[layer] = await Promise.all(Object.entries(files).map(async ([midi, file]) => {
+        const list = await Promise.all(Object.entries(files).map(async ([midi, file]) => {
           const data = await (await fetch(`/samples/${file}`)).arrayBuffer();
-          return { midi: Number(midi), buf: await ctx.decodeAudioData(data) };
+          const buf = await ctx.decodeAudioData(data);
+          const { off, level } = analyse(buf);
+          return { midi: Number(midi), buf, off: inst === 'piano' ? 0 : off, level };
         }));
+        // even out loudness within the layer (bowed recordings vary by several dB)
+        const levels = list.map(x => x.level).sort((p, q) => p - q);
+        const median = levels[Math.floor(levels.length / 2)] || 1;
+        set[layer] = list.map(x => ({ midi: x.midi, buf: x.buf, off: x.off,
+          norm: inst === 'piano' ? 1 : Math.max(0.5, Math.min(2, median / (x.level || median))) }));
         set[layer].sort((a, b) => a.midi - b.midi);
       }));
       return set;
@@ -349,11 +372,11 @@ export class ScorePlayer {
     // Two recorded layers (soft/loud): blend them by loudness instead of jumping between them,
     // so the tone colour changes smoothly from note to note.
     const blend = set.soft?.length && set.loud?.length ? Math.max(0, Math.min(1, (n.vel - 0.35) / 0.4)) : null;
-    const layers: { list: { midi: number; buf: AudioBuffer }[]; mix: number }[] = blend == null
+    const layers: { list: Sample[]; mix: number }[] = blend == null
       ? [{ list: (set.loud?.length ? set.loud : set.soft ?? Object.values(set)[0]), mix: 1 }]
       : [{ list: set.soft, mix: 1 - blend }, { list: set.loud, mix: blend }].filter(l => l.mix > 0.02);
 
-    const nearest = (list: { midi: number; buf: AudioBuffer }[]) => {
+    const nearest = (list: Sample[]) => {
       let best = list[0];
       for (const x of list) if (Math.abs(x.midi - n.midi) < Math.abs(best.midi - n.midi)) best = x;
       return best;
@@ -379,16 +402,18 @@ export class ScorePlayer {
       // bowed: soft start, held, bow release. Long notes chain overlapping pieces of the steady
       // middle of the recording with crossfades (a plain loop clicks and wobbles).
       const attack = n.legato ? 0.04 : 0.07;
-      gain.gain.setValueAtTime(0.0001, at);
-      gain.gain.linearRampToValueAtTime(level, at + attack);
-      gain.gain.setValueAtTime(level, at + Math.max(attack, dur - 0.02));
-      gain.gain.setTargetAtTime(0, at + dur, 0.08);
       end = at + dur + 0.5;
-      const best = nearest(layers[0].list);
+      // the "loud" recordings have a clean bow attack; the soft ones swell in slowly (and would
+      // make every note start late by a different amount), so bowed notes always use loud ones
+      const best = nearest(set.loud?.length ? set.loud : layers[0].list);
       const rate = Math.pow(2, (n.midi - best.midi) / 12);
       const bufDur = best.buf.duration / rate;           // real seconds of recording
-      const xf = 0.25, startOff = 0.8;                   // crossfade, where the steady part begins (buffer s)
-      let t = at, offset = 0;
+      const xf = 0.25, startOff = best.off + 0.8;        // crossfade, where the steady part begins (buffer s)
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.linearRampToValueAtTime(level * best.norm, at + attack);
+      gain.gain.setValueAtTime(level * best.norm, at + Math.max(attack, dur - 0.02));
+      gain.gain.setTargetAtTime(0, at + dur, 0.08);
+      let t = at, offset = best.off;
       for (let k = 0; t < end && k < 40; k++) {
         const src = ctx.createBufferSource();
         src.buffer = best.buf; src.playbackRate.value = rate;

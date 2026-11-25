@@ -307,6 +307,7 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
   const progRef = useRef<HTMLDivElement>(null);
   const [showMore, setShowMore] = useState(false);
   const [showMix, setShowMix] = useState(false);   // the parts mixer drawer on the bar
+  const [showBars, setShowBars] = useState(false); // the Bars menu (numbers, check / fix)
   /** Click on the progress line: jump there (keeps playing if it was). */
   function seek(frac: number) {
     const p = playerRef.current;
@@ -404,29 +405,13 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
   const progressPct = score && total ? 0 : 0; // the line is moved every frame while playing (progRef)
 
   return (
-    <div className="relative" style={{ width: 'min(860px, calc(100vw - 24px))', fontFeatureSettings: '"tnum"' }}>
+    <div className="relative" style={{ width: 'min(1040px, 100%)', minWidth: 'min(1040px, calc(100vw - 150px))', fontFeatureSettings: '"tnum"' }}>
       {/* Settings: start bar, loop range, tempo on phones, score file */}
       {showMore && (
         <>
           <div className="fixed inset-0 z-[1]" onClick={() => setShowMore(false)} />
           <div className="cp-glass cp-solid cp-pop absolute bottom-full mb-2 right-0 z-[2] w-[300px] max-w-full p-4 rounded-[22px] flex flex-col gap-3.5"
             style={{ transformOrigin: 'bottom right' }}>
-            {(onToggleBarNumbers || onOpenBars) && (
-              <Field label={t('Bars')}>
-                <div className="flex gap-2">
-                  {onToggleBarNumbers && (
-                    <button onClick={onToggleBarNumbers} aria-pressed={!!showBarNumbers} className="cp-chip flex-1 justify-center">
-                      {showBarNumbers ? t('Hide bar numbers') : t('Show bar numbers')}
-                    </button>
-                  )}
-                  {onOpenBars && (
-                    <button onClick={() => { onOpenBars(); setShowMore(false); }} className="cp-chip flex-1 justify-center">
-                      {t('Check / fix bars')}
-                    </button>
-                  )}
-                </div>
-              </Field>
-            )}
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('Start at bar')}>
                 <input type="number" min={1} max={total || 999} value={fromBar} aria-label={t('Start at bar')}
@@ -478,10 +463,25 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
         </>
       )}
 
+      {showBars && (
+        <>
+          <div className="fixed inset-0 z-[1]" onClick={() => setShowBars(false)} />
+          <div className="cp-glass cp-solid cp-pop absolute bottom-full mb-2 right-24 z-[2] w-[240px] p-2 rounded-[18px] flex flex-col gap-1" style={{ transformOrigin: 'bottom center' }}>
+            {onToggleBarNumbers && (
+              <button onClick={onToggleBarNumbers} className="cp-chip justify-between w-full">
+                {t('Bar numbers')}<span style={{ color: showBarNumbers ? 'var(--cp-live)' : 'var(--cp-ink-3)' }}>{showBarNumbers ? t('On') : t('Off')}</span>
+              </button>
+            )}
+            {onOpenBars && (
+              <button onClick={() => { onOpenBars(); setShowBars(false); }} className="cp-chip w-full">{t('Check / fix bars')} →</button>
+            )}
+          </div>
+        </>
+      )}
       <div className="cp-glass rounded-[28px] p-1.5">
         <div className="flex items-center justify-between gap-1.5 sm:gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           <button onClick={() => goToBar(fromBar)} disabled={!score} title={t('Back to bar {n}', { n: fromBar })} aria-label={t('Back to bar {n}', { n: fromBar })}
-            className="cp-btn w-9 h-9 rounded-full hidden sm:flex q-bottom-extra">
+            className="cp-btn w-9 h-9 rounded-full hidden xl:flex q-bottom-extra">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M6 5v14M18 6l-9 6 9 6z" /><rect x="5" y="5" width="2" height="14" rx="1" /></svg>
           </button>
 
@@ -499,7 +499,7 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
           </button>
 
           {/* Bar counter + what's happening */}
-          <div className="flex flex-col justify-center shrink-0 w-[96px] sm:w-[128px] pl-1">
+          <div className="flex flex-col justify-center shrink-0 w-[92px] sm:w-[108px] pl-1">
             <div className="flex items-baseline gap-1.5 leading-none">
               <span className="text-[10px] uppercase tracking-[0.14em]" style={{ color: 'var(--cp-live)' }}>{t('Bar')}</span>
               <span key={shownBar} className="cp-serif cp-pop text-[19px] tracking-tight">{shownBar}</span>
@@ -548,16 +548,42 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
             </button>
           </div>
 
-          {/* Parts: a light per part shows who is playing; opens the mixer */}
-          <button onClick={() => setShowMix(v => !v)} aria-expanded={showMix} aria-pressed={showMix} disabled={!score}
-            className="cp-chip q-bottom-extra" title={t('Parts: sound, mute, solo, volume')}>
-            {Array.from({ length: nParts }, (_, i) => (
-              <span key={i} className="w-2 h-2 rounded-full transition-all" style={{
-                background: activeParts.includes(i) && !partOff(i) ? 'var(--cp-live)' : partOff(i) ? 'transparent' : 'var(--cp-ink-3)',
-                boxShadow: activeParts.includes(i) && !partOff(i) ? '0 0 8px var(--cp-live)' : partOff(i) ? 'inset 0 0 0 1px var(--cp-ink-3)' : 'none' }} />
-            ))}
-            <span className="hidden sm:inline">{t('Parts')}</span>
-          </button>
+          {/* Parts, right on the bar: tap a part to mute it, S to hear only it; ▾ opens sound + volume */}
+          <div className="flex items-center gap-1 shrink-0 q-bottom-extra rounded-full p-[3px]" style={{ background: 'var(--cp-wash)' }}>
+            {(parts.length ? parts : [t('Score')]).map((name, i) => {
+              const off = partOff(i), live = activeParts.includes(i) && !off;
+              return (
+                <div key={i} className="flex items-center rounded-full transition-all" style={{ background: off ? 'transparent' : 'var(--cp-glass-strong)', boxShadow: off ? 'inset 0 0 0 1px var(--cp-hair)' : '0 1px 2px rgba(0,0,0,.08)' }}>
+                  <button onClick={() => { setSolo(null); setMuted(m => (m.includes(i) ? m.filter(x => x !== i) : [...m, i])); }} aria-pressed={!off}
+                    title={off ? t('Turn {part} on', { part: name }) : t('Mute {part} (e.g. the student plays it)', { part: name })}
+                    className="h-7 pl-2.5 pr-2 rounded-full flex items-center gap-1.5 text-[12px] font-medium transition-transform active:scale-95"
+                    style={{ color: off ? 'var(--cp-ink-3)' : 'var(--cp-ink)', textDecoration: off ? 'line-through' : 'none' }}>
+                    <span className="w-2 h-2 rounded-full shrink-0 transition-all" style={{ background: live ? 'var(--cp-live)' : off ? 'transparent' : 'var(--cp-ink-3)',
+                      boxShadow: live ? '0 0 8px var(--cp-live)' : off ? 'inset 0 0 0 1px var(--cp-ink-3)' : 'none' }} />
+                    <span className="max-w-[72px] truncate">{name}</span>
+                  </button>
+                  {parts.length > 1 && (
+                    <button onClick={() => setSolo(sv => (sv === i ? null : i))} aria-pressed={solo === i} title={t('Only {part}', { part: name })}
+                      className="w-6 h-6 mr-0.5 rounded-full text-[10px] font-bold transition-all active:scale-90"
+                      style={solo === i ? { background: 'var(--cp-ink)', color: 'var(--cp-paper)' } : { color: 'var(--cp-ink-3)' }}>S</button>
+                  )}
+                </div>
+              );
+            })}
+            <button onClick={() => setShowMix(v => !v)} aria-expanded={showMix} disabled={!score} title={t('Parts: sound, mute, solo, volume')}
+              className="w-7 h-7 rounded-full grid place-items-center transition-transform active:scale-90" style={{ color: 'var(--cp-ink-2)', transform: showMix ? 'rotate(180deg)' : 'none' }}>
+              <ChipIcon><path d="M6 9l6 6 6-6" /></ChipIcon>
+            </button>
+          </div>
+
+          {/* Bars: show numbers, check / fix the bar boxes */}
+          {(onToggleBarNumbers || onOpenBars) && (
+            <div className="relative shrink-0 q-bottom-extra">
+              <button onClick={() => setShowBars(v => !v)} aria-expanded={showBars} className="cp-chip" title={t('Bars')}>
+                <span className="cp-serif text-[14px] leading-none">#</span><span className="hidden xl:inline">{t('Bars')}</span>
+              </button>
+            </div>
+          )}
 
           {offNotes.length > 0 && onMarkOffNotes && (
             <button onClick={() => { onMarkOffNotes(offNotes); setOffNotes([]); followerRef.current?.clearOff(); }} className="cp-chip" style={{ color: 'var(--cp-live)' }}>
@@ -567,13 +593,13 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
           {isHost && onAiMarks && (
             <button onClick={askAi} disabled={!score || aiBusy} className="cp-chip q-bottom-extra hidden sm:flex" style={{ boxShadow: 'inset 0 0 0 1px var(--cp-ink)' }}
               title={aiMsg || t('AI suggests teaching marks for this score (fingering, shifts, bowing, hard spots)')}>
-              <span aria-hidden>✦</span><span className="hidden lg:inline">{aiBusy ? t('Thinking…') : t('AI marks')}</span>
+              <span aria-hidden>✦</span><span className="hidden xl:inline">{aiBusy ? t('Thinking…') : t('AI marks')}</span>
             </button>
           )}
           <button onClick={() => setShowMore(v => !v)} aria-pressed={showMore} title={t('Playback settings')} aria-label={t('Playback settings')}
             className="cp-chip q-bottom-extra">
             <ChipIcon><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></ChipIcon>
-            <span className="hidden md:inline">{t('More')}</span>
+            <span className="hidden xl:inline">{t('More')}</span>
           </button>
         </div>
 

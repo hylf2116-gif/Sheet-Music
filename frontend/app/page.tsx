@@ -812,16 +812,11 @@ export default function Home() {
     });
   }, [annotations, myClientId, nicknameMap, nickname, colorMode, personColors, personNames]);
 
-  // With color by person, every mark is shown in its owner's color (so changing a color recolors their marks).
-  const byPerson = colorMode !== 'free';
-  const myPersonColor = byPerson ? personColors[myClientId] : undefined;
-  const displayAnnotations = useMemo(() => {
-    if (!byPerson) return annotations;
-    return annotations.map(a => {
-      const c = a.ownerId && personColors[a.ownerId];
-      return c && a.color !== c ? { ...a, color: c } : a;
-    });
-  }, [annotations, byPerson, personColors]);
+  // Colors: every mark keeps the color it was drawn in. Only with "Host assigns" is a student's
+  // pen locked to the color the host gave them; the host can always pick any color.
+  const byPerson = colorMode === 'assigned';
+  const myPersonColor = byPerson && !isHost ? personColors[myClientId] : undefined;
+  const displayAnnotations = annotations;
   // People who have a color in this room (everyone who joined, plus anyone who drew).
   const colorPeople = useMemo(() => Object.entries(personColors).map(([cid, c]) => ({
     clientId: cid,
@@ -2340,7 +2335,7 @@ export default function Home() {
 
       {/* Playback of the recognized score (above the page bar) */}
       {roomId && (isHost || omrState?.imported || (omrState?.hasMusicXml && (omrState.status === 'done' || omrState.partial))) && (
-        <div className="fixed left-1/2 -translate-x-1/2 z-40" style={{ bottom: 72 }}>
+        <div className="fixed left-1/2 -translate-x-1/2 z-40" style={{ bottom: 72, maxWidth: isNarrow ? 'calc(100vw - 16px)' : 'calc(100vw - 150px)' }}>
           <PlaybackBar roomId={roomId}
             ready={!!omrState?.hasMusicXml && (omrState.status === 'done' || !!omrState.partial)}
             version={`${omrState?.status}:${omrState?.measureCount ?? 0}`}

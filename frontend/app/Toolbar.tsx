@@ -674,20 +674,23 @@ export default function Toolbar(p: ToolbarProps) {
     return (
       <>
         {/* Room capsule: home, pages, people, share */}
-        <div className={`cp-glass fixed z-[45] flex items-center gap-1 rounded-full pl-1.5 pr-1.5 py-1.5 select-none ${p.compact ? 'q-drop' : 'q-top'}`}
+        <div className="cp-glass q-drop fixed z-[45] flex items-center gap-1 rounded-full pl-1.5 pr-1.5 py-1.5 select-none"
           style={p.compact
             ? { top: 'calc(8px + env(safe-area-inset-top))', left: 'calc(8px + env(safe-area-inset-left))', right: 'calc(8px + env(safe-area-inset-right))' }
-            : { top: 'calc(12px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)', maxWidth: 'calc(100vw - 32px)' }}>
-          <button onClick={p.onGoHome} title={t('Home')} aria-label={t('Home')} className="cp-btn w-9 h-9 rounded-full"><LogoMark size={22} /></button>
+            : { top: 'calc(10px + env(safe-area-inset-top))', left: 'calc(12px + env(safe-area-inset-left))', right: 'calc(12px + env(safe-area-inset-right))' }}>
+          <button onClick={p.onGoHome} title={t('Home')} aria-label={t('Home')} className="cp-btn h-9 rounded-full gap-2 pl-1.5 pr-3">
+            <LogoMark size={22} />{!p.compact && <span className="cp-serif text-[16px] tracking-tight" style={{ color: 'var(--cp-ink)' }}>Unino</span>}
+          </button>
+          {!p.compact && <span className="flex-1" />}
           {p.compact && <span className="flex-1" />}
           {p.numPages > 1 && !p.compact && (
             <>
-              <span className="cp-sep w-px h-5 mx-1" />
               <button onClick={() => p.onPageChange(p.currentPage - 1)} disabled={p.currentPage === 0} aria-label={t('Previous page')} className="cp-btn w-8 h-8 rounded-full"><Icon name="chevronL" size={16} /></button>
               <span className="cp-serif text-[15px] tabular-nums px-1 whitespace-nowrap">{p.currentPage + 1}<span style={{ color: 'var(--cp-ink-3)' }}> / {p.numPages}</span></span>
               <button onClick={() => p.onPageChange(p.currentPage + 1)} disabled={p.currentPage >= p.numPages - 1} aria-label={t('Next page')} className="cp-btn w-8 h-8 rounded-full"><Icon name="chevronR" size={16} /></button>
             </>
           )}
+          {!p.compact && <span className="flex-1" />}
           <span className="cp-sep w-px h-5 mx-1" />
           {p.isHost ? (
             <>

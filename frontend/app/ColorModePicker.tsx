@@ -5,7 +5,7 @@ import { useT } from '../lib/i18n';
 // How annotation colors work in a room (chosen when the room is created; the host can change it later).
 //   free     — any color for any mark (old behaviour)
 //   assigned — one color per person, set by the host
-//   self     — one color per person, each person picks their own
+//   self     — everyone gets a starting color of their own; any mark can still use any color
 export type ColorMode = 'free' | 'assigned' | 'self';
 
 export const COLOR_MODE_KEY = 'unino_color_mode';
@@ -23,8 +23,8 @@ export const PERSON_PALETTE = ['#e53935', '#1e88e5', '#43a047', '#8e24aa', '#fb8
 
 export const COLOR_MODE_OPTIONS: { value: ColorMode; title: string; hint: string }[] = [
   { value: 'free', title: 'Free', hint: 'Anyone can use any color for any mark.' },
-  { value: 'assigned', title: 'Host assigns', hint: 'Everyone gets their own color, and only the host can change it.' },
-  { value: 'self', title: 'Each picks', hint: 'Everyone gets their own color and can pick a different one.' },
+  { value: 'assigned', title: 'Host assigns', hint: 'Each student draws in the color the host gives them. The host can use any color.' },
+  { value: 'self', title: 'Each picks', hint: 'Everyone starts with their own color, and each mark can use any color.' },
 ];
 
 // Tiny picture for each option: who draws in which color.
