@@ -2334,12 +2334,13 @@ export default function Home() {
       )}
 
       {/* Playback of the recognized score (above the page bar) */}
-      {roomId && (isHost || omrState?.imported || (omrState?.hasMusicXml && (omrState.status === 'done' || omrState.partial))) && (
+      {roomId && (isHost || omrState?.imported || omrState?.status === 'running' || (omrState?.hasMusicXml && (omrState.status === 'done' || omrState.partial))) && (
         <div className="fixed left-1/2 -translate-x-1/2 z-40" style={{ bottom: 72, maxWidth: isNarrow ? 'calc(100vw - 16px)' : 'calc(100vw - 150px)' }}>
           <PlaybackBar roomId={roomId}
             ready={!!omrState?.hasMusicXml && (omrState.status === 'done' || !!omrState.partial)}
             version={`${omrState?.status}:${omrState?.measureCount ?? 0}`}
             partial={!!omrState?.partial}
+            readingScore={omrState?.status === 'running' ? (omrState.progress ?? { page: 0, total: null }) : null}
             imported={omrState?.imported ?? null}
             barBoxCount={omrState?.measureCount}
             startBar={omrState?.highlightedMeasure ?? null}

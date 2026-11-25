@@ -91,6 +91,20 @@ Open the Vercel address, then:
 | `ENABLE_OMR` | on | `false` |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | from `backend/.env` | from Supabase |
 
+## Turning on score recognition online (Railway)
+
+Recognition reads scores with the AI reader homr (about 2 GB of memory per page being read)
+and falls back to Audiveris. To use it on the live site:
+
+1. Railway → backend service → **Variables**: delete `ENABLE_OMR` (or set it to `true`).
+2. Same place: add `ANTHROPIC_API_KEY` (for AI teaching marks).
+3. Service → **Settings → Build**: builder = **Dockerfile** (root directory `backend`).
+4. Service → **Settings → Resources**: memory at least **4 GB** (8 GB reads two pages at once).
+   With less than 2.5 GB the server uses Audiveris only (slower, less accurate).
+5. Storage: a **volume mounted at `/data`** and `DATA_DIR=/data`, so results survive restarts.
+6. Deploy. The build takes several minutes (it downloads homr's models once).
+7. Check: open a room, the player shows "Reading the score: page 1 of N".
+
 ## Score recognition engines
 
 - **homr** (AI, used first): faster and better at rhythm. Locally it runs from `~/homr-env`

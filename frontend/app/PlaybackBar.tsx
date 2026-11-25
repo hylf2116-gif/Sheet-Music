@@ -5,7 +5,7 @@ import { useT, useLang } from '../lib/i18n';
 import { backendUrl } from '../lib/config';
 import { parseMusicXml, type ScoreModel } from '../lib/musicxml';
 import { parseMidi } from '../lib/midi';
-import { ScorePlayer, soundForPart, type Instrument, type Sound } from '../lib/scorePlayer';
+import { ScorePlayer, soundForPart, SOUNDS, type Instrument, type Sound } from '../lib/scorePlayer';
 import { ScoreFollower, type OffNote } from '../lib/scoreFollower';
 import { usePitch } from '../hooks/usePitch';
 
@@ -13,7 +13,8 @@ import { usePitch } from '../hooks/usePitch';
 // being played and keeps it on screen (turning pages). Each person plays on their own device.
 export interface AiMark { bar: number; kind: string; text: string }
 
-export default function PlaybackBar({ roomId, ready, version, partial, imported, barBoxCount, startBar, onBar, keepInView, onScore, onMarkOffNotes, isHost, onAiMarks, canPick, pickMode, onPickMode, pickedBar, onLoopBars, showBarNumbers, onToggleBarNumbers, onOpenBars }: {
+export default function PlaybackBar({ roomId, ready, version, partial, imported, barBoxCount, startBar, onBar, keepInView, onScore, onMarkOffNotes, isHost, onAiMarks, canPick, pickMode, onPickMode, pickedBar, onLoopBars, readingScore, showBarNumbers, onToggleBarNumbers, onOpenBars }: {
+  readingScore?: { page: number; total: number | null } | null; // recognition running: pages read so far
   showBarNumbers?: boolean;             // bar numbers drawn on the score
   onToggleBarNumbers?: () => void;
   onOpenBars?: () => void;              // the Bars panel (numbers, highlight, check and fix bars)
@@ -358,7 +359,7 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
   toggleRef.current = toggle;
 
   const hasSource = ready || !!imported;
-  if (!hasSource && !isHost) return null;
+  if (!hasSource && !isHost && !readingScore) return null;
   // Part names for people: the AI reader calls a melody line "Voice", so show the instrument instead
   const parts = (score?.parts ?? []).map((name, i) =>
     score && /^voice\b/i.test(name) ? t(soundForPart(score, i) === 'cello' ? 'Cello' : 'Violin') : name);
@@ -369,7 +370,7 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
       onChange={e => { const f = e.target.files?.[0]; if (f) uploadScoreFile(f); e.target.value = ''; }} />
   );
   // Teacher, nothing to play yet: just offer to add a file.
-  if (!hasSource) {
+  if (!hasSource && !readingScore) {
     return (
       <div className="cp-glass flex items-center gap-2 px-2 py-1.5 rounded-full">
         {fileInput}
@@ -382,7 +383,10 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
   }
   const total = score?.bars.length ?? 0;
   const shownBar = atBar ?? fromBar;
-  const title = loadError || (micError && t(micError)) || (!score ? t('Loading notes…')
+  const readingText = readingScore
+    ? (readingScore.total ? t('Reading the score: page {a} of {b}', { a: Math.min(readingScore.page + 1, readingScore.total), b: readingScore.total }) : t('Reading the score…'))
+    : '';
+  const title = loadError || (micError && t(micError)) || (!score ? (readingText || t('Loading notes…'))
     : following ? t('Listening…')
     : playing ? t('Playing') : resumeAt != null ? t('Paused') : t('Ready'));
   const caption = loopPick === 'first' ? t('Loop: tap the first bar on the score')
@@ -390,7 +394,7 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
     : importMsg || mismatch || aiMsg || (following
       ? (offNotes.length ? t('{n} notes out of tune', { n: offNotes.length }) : t('Play — the score follows you'))
       : loadingSounds ? t('Loading instrument sounds…')
-      : partial ? t('First pages ready · the rest is still being read')
+      : readingScore && score ? readingText + ' · ' + t('the pages read so far can be played')
       : pickMode ? t('Tap a bar on the score to play from it.')
       : '');
   // loop range on the progress line (by written beats: close enough to show where it is)
@@ -615,9 +619,11 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
                     background: activeParts.includes(i) && !partOff(i) ? 'var(--cp-live)' : 'var(--cp-hair)',
                     boxShadow: activeParts.includes(i) && !partOff(i) ? '0 0 8px var(--cp-live)' : 'none' }} />
                   <span className="cp-serif text-[15px] min-w-[64px] truncate" title={name}>{name}</span>
-                  <Segmented value={effectiveSound(i)} label={t('Sound for {part}', { part: name })}
-                    options={[['piano', t('Piano')], ['violin', t('Violin')], ['cello', t('Cello')]]}
-                    onChange={v => setPartSounds(ps => ({ ...ps, [i]: v as Sound }))} />
+                  <select value={effectiveSound(i)} aria-label={t('Sound for {part}', { part: name })}
+                    onChange={e => setPartSounds(ps => ({ ...ps, [i]: e.target.value as Sound }))}
+                    className="cp-input h-8 pl-2 pr-1 text-[12.5px] shrink-0">
+                    {SOUNDS.map(v => <option key={v} value={v}>{t(SOUND_LABEL[v])}</option>)}
+                  </select>
                   <button onClick={() => setMuted(m => (m.includes(i) ? m.filter(x => x !== i) : [...m, i]))} aria-pressed={muted.includes(i)}
                     title={t('Mute {part} (e.g. the student plays it)', { part: name })}
                     className="w-8 h-8 rounded-[10px] text-[12px] font-semibold shrink-0 transition-all active:scale-90"
@@ -640,26 +646,10 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
   );
 }
 
+const SOUND_LABEL: Record<Sound, string> = { piano: 'Piano', violin: 'Violin', cello: 'Cello', flute: 'Flute', clarinet: 'Clarinet', trumpet: 'Trumpet' };
+
 function ChipIcon({ children }: { children: React.ReactNode }) {
   return <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="shrink-0">{children}</svg>;
-}
-
-/** Segmented control with a sliding selected block (Apple style). */
-function Segmented({ value, options, onChange, label }: { value: string; options: [string, string][]; onChange: (v: string) => void; label: string }) {
-  const idx = Math.max(0, options.findIndex(o => o[0] === value));
-  return (
-    <div role="radiogroup" aria-label={label} className="relative grid p-[3px] rounded-[11px] shrink-0"
-      style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)`, background: 'var(--cp-wash)' }}>
-      <span className="absolute top-[3px] bottom-[3px] rounded-[8px]" style={{
-        left: 3, width: `calc((100% - 6px) / ${options.length})`, transform: `translateX(${idx * 100}%)`,
-        background: 'var(--cp-glass-strong)', boxShadow: '0 1px 3px rgba(0,0,0,.14)', transition: 'transform .45s var(--cp-spring)' }} />
-      {options.map(([v, l]) => (
-        <button key={v} role="radio" aria-checked={v === value} onClick={() => onChange(v)}
-          className="relative h-7 px-2.5 text-[12px] rounded-[8px] transition-colors"
-          style={{ color: v === value ? 'var(--cp-ink)' : 'var(--cp-ink-2)', fontWeight: v === value ? 500 : 400 }}>{l}</button>
-      ))}
-    </div>
-  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

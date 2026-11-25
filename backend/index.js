@@ -1019,6 +1019,8 @@ io.on('connection', (socket) => {
       raisedHands: room.raisedHands,
       currentPage: room.currentPage ?? 0,
     });
+    // A room whose score hasn't been read yet (e.g. after a server restart): start when the teacher comes in
+    if (isHostSocket && !omrJobs[roomPdfFile(room)?.stem ?? '']) autoStartOmr(room);
     socket.emit('omr-state', omrStateFor(room));
     room.lastActive = new Date().toISOString();
     socket.emit('play-order', { order: room.playOrder ?? null });

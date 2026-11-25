@@ -1,5 +1,5 @@
 {
- "source": "CC0: VCSL (Versilian Studios) Kawai grand piano; VSCO-2 CE solo violin, cello section",
+ "source": "CC0: VCSL (Versilian Studios) Kawai grand piano; VSCO-2 CE solo violin, cello section, flute, clarinet, trumpet",
  "instruments": {
   "piano": {
    "soft": {
@@ -145,6 +145,83 @@
     "67": "violin/67-soft.m4a",
     "79": "violin/79-soft.m4a",
     "91": "violin/91-soft.m4a"
+   }
+  },
+  "flute": {
+   "soft": {
+    "69": "flute/69-soft.m4a",
+    "81": "flute/81-soft.m4a",
+    "93": "flute/93-soft.m4a",
+    "60": "flute/60-soft.m4a",
+    "72": "flute/72-soft.m4a",
+    "84": "flute/84-soft.m4a",
+    "96": "flute/96-soft.m4a",
+    "64": "flute/64-soft.m4a",
+    "76": "flute/76-soft.m4a",
+    "88": "flute/88-soft.m4a"
+   },
+   "loud": {
+    "69": "flute/69-loud.m4a",
+    "81": "flute/81-loud.m4a",
+    "93": "flute/93-loud.m4a",
+    "60": "flute/60-loud.m4a",
+    "72": "flute/72-loud.m4a",
+    "64": "flute/64-loud.m4a",
+    "76": "flute/76-loud.m4a"
+   }
+  },
+  "clarinet": {
+   "soft": {
+    "58": "clarinet/58-soft.m4a",
+    "70": "clarinet/70-soft.m4a",
+    "82": "clarinet/82-soft.m4a",
+    "50": "clarinet/50-soft.m4a",
+    "62": "clarinet/62-soft.m4a",
+    "74": "clarinet/74-soft.m4a",
+    "86": "clarinet/86-soft.m4a",
+    "90": "clarinet/90-soft.m4a",
+    "53": "clarinet/53-soft.m4a",
+    "65": "clarinet/65-soft.m4a",
+    "77": "clarinet/77-soft.m4a"
+   },
+   "loud": {
+    "58": "clarinet/58-loud.m4a",
+    "70": "clarinet/70-loud.m4a",
+    "82": "clarinet/82-loud.m4a",
+    "50": "clarinet/50-loud.m4a",
+    "62": "clarinet/62-loud.m4a",
+    "74": "clarinet/74-loud.m4a",
+    "86": "clarinet/86-loud.m4a",
+    "90": "clarinet/90-loud.m4a",
+    "53": "clarinet/53-loud.m4a",
+    "65": "clarinet/65-loud.m4a",
+    "77": "clarinet/77-loud.m4a"
+   }
+  },
+  "trumpet": {
+   "soft": {
+    "70": "trumpet/70-soft.m4a",
+    "57": "trumpet/57-soft.m4a",
+    "81": "trumpet/81-soft.m4a",
+    "60": "trumpet/60-soft.m4a",
+    "84": "trumpet/84-soft.m4a",
+    "63": "trumpet/63-soft.m4a",
+    "74": "trumpet/74-soft.m4a",
+    "53": "trumpet/53-soft.m4a",
+    "77": "trumpet/77-soft.m4a",
+    "67": "trumpet/67-soft.m4a"
+   },
+   "loud": {
+    "70": "trumpet/70-loud.m4a",
+    "57": "trumpet/57-loud.m4a",
+    "81": "trumpet/81-loud.m4a",
+    "60": "trumpet/60-loud.m4a",
+    "84": "trumpet/84-loud.m4a",
+    "63": "trumpet/63-loud.m4a",
+    "74": "trumpet/74-loud.m4a",
+    "53": "trumpet/53-loud.m4a",
+    "77": "trumpet/77-loud.m4a",
+    "67": "trumpet/67-loud.m4a"
    }
   }
  }

@@ -8,15 +8,21 @@ import type { ScoreModel } from './musicxml';
 import { buildPerformance, type Performance, type PerfNote } from './performance';
 
 // 'auto' picks a sound for each part from its name / clef (a cello part plays as cello).
-export type Instrument = 'auto' | 'piano' | 'cello' | 'violin';
-export type Sound = 'piano' | 'cello' | 'violin';
+export type Instrument = 'auto' | 'piano' | 'cello' | 'violin' | 'flute' | 'clarinet' | 'trumpet';
+export type Sound = 'piano' | 'cello' | 'violin' | 'flute' | 'clarinet' | 'trumpet';
+/** Every sound the player has, in the order the mixer lists them. */
+export const SOUNDS: Sound[] = ['piano', 'violin', 'cello', 'flute', 'clarinet', 'trumpet'];
 
 /** The sound a part should play with, from its name, or its clef and staves when unnamed. */
 export function soundForPart(score: ScoreModel, part: number): Sound {
   const name = (score.parts?.[part] ?? '').toLowerCase();
-  if (/cello|violoncel|\bvc\.?\b|contrabass|double bass|大提琴|低音提琴/.test(name)) return 'cello';
-  if (/violin|viola|\bvln|\bvla|fiddle|erhu|小提琴|中提琴|二胡|胡琴/.test(name)) return 'violin';
-  if (/piano|keyboard|klavier|钢琴/.test(name)) return 'piano';
+  // Names printed on the score → the closest of our sounds
+  if (/piano|keyboard|klavier|clavier|cembalo|harpsichord|organ|orgel|harp|guitar|钢琴|键盘|管风琴|竖琴|吉他/.test(name)) return 'piano';
+  if (/flute|flöte|flauto|flûte|piccolo|recorder|blockflöte|长笛|短笛|竖笛/.test(name)) return 'flute';
+  if (/clarinet|klarinette|clarinetto|clarinette|sax|oboe|hautbois|cor anglais|english horn|单簧管|萨克斯|双簧管/.test(name)) return 'clarinet';
+  if (/trumpet|trompete|tromba|trompette|cornet|flugel|horn|corno|小号|圆号|短号/.test(name)) return 'trumpet';
+  if (/cello|violoncel|\bvc\.?\b|\bvlc|contrabass|double bass|kontrabass|bass(o|e)?\b|continuo|bassoon|fagot|fagott|basson|viola da gamba|gamb|tuba|trombone|大提琴|低音|巴松|大管|长号/.test(name)) return 'cello';
+  if (/violin|violon\b|viola|\bvln|\bvla|fiddle|erhu|soprano|alto|tenor|小提琴|中提琴|二胡|胡琴/.test(name)) return 'violin';
   const info = score.partInfo?.[part];
   // "Voice": a single melody line (the AI reader's name for it) — a string sound by clef
   if (/^voice\b/.test(name)) return info?.clef === 'F' ? 'cello' : 'violin';
@@ -55,7 +61,7 @@ function analyse(buf: AudioBuffer): { off: number; level: number } {
 // Recordings are shared by every player on the page (decoded once per instrument).
 const loaded = new Map<string, Promise<SampleSet | null>>();
 let manifestPromise: Promise<{ instruments: Record<string, Record<string, Record<string, string>>> } | null> | null = null;
-function loadSamples(ctx: AudioContext, inst: 'piano' | 'cello' | 'violin'): Promise<SampleSet | null> {
+function loadSamples(ctx: AudioContext, inst: Sound): Promise<SampleSet | null> {
   if (loaded.has(inst)) return loaded.get(inst)!;
   const p = (async () => {
     try {
@@ -405,7 +411,10 @@ export class ScorePlayer {
       end = at + dur + 0.5;
       // the "loud" recordings have a clean bow attack; the soft ones swell in slowly (and would
       // make every note start late by a different amount), so bowed notes always use loud ones
-      const best = nearest(set.loud?.length ? set.loud : layers[0].list);
+      const strings = sound === 'violin' || sound === 'cello';
+      const best = nearest(strings && set.loud?.length ? set.loud
+        : blend != null && n.vel >= 0.55 && set.loud?.length ? [...set.loud, ...(set.soft ?? []).filter(x => !set.loud.some(l => Math.abs(l.midi - x.midi) < 3))]
+        : [...(set.soft ?? []), ...(set.loud ?? [])]);
       const rate = Math.pow(2, (n.midi - best.midi) / 12);
       const bufDur = best.buf.duration / rate;           // real seconds of recording
       const xf = 0.25, startOff = best.off + 0.8;        // crossfade, where the steady part begins (buffer s)

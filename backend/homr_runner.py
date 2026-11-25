@@ -182,6 +182,52 @@ def measure_boxes(multi_staffs, voices, to_input, gray):
     return boxes, staff_height
 
 
+_ocr = None
+
+
+def part_labels(multi_staffs, to_input, gray, n_parts):
+    """Instrument names printed left of the first full line of music (e.g. "Bassoon I",
+    "Violoncello", "Basso continuo"), one per part, top to bottom. Empty strings where none."""
+    global _ocr
+    if not multi_staffs or n_parts <= 0:
+        return []
+    row = max(multi_staffs[:3], key=lambda r: len(r.staffs))   # first systems usually carry full names
+    staffs = row.staffs
+    # parts take consecutive staves; when there are fewer parts than staves, the lowest part
+    # (piano / continuo with two staves) takes the extra ones
+    spans, k = [], 0
+    for i in range(n_parts):
+        take = 1 + (len(staffs) - n_parts if i == n_parts - 1 else 0)
+        group = staffs[k:k + max(1, take)]
+        k += max(1, take)
+        if not group:
+            break
+        _, ya = to_input((0.0, float(group[0].min_y)))
+        _, yb = to_input((0.0, float(group[-1].max_y)))
+        spans.append((ya, yb))
+    left, _ = to_input((float(min(s.min_x for s in staffs)), 0.0))
+    if left < 40 or not spans:
+        return [""] * n_parts
+    top = max(0, int(spans[0][0] - (spans[0][1] - spans[0][0]))); bot = min(gray.shape[0], int(spans[-1][1] + 20))
+    crop = gray[top:bot, 0:int(left - 4)]
+    try:
+        if _ocr is None:
+            from rapidocr import RapidOCR
+            _ocr = RapidOCR()
+        res = _ocr(np.stack([crop] * 3, axis=-1))
+    except Exception as e:  # text reading is a bonus: never let it break recognition
+        sys.stderr.write(f"part names: OCR failed ({e})\n")
+        return [""] * n_parts
+    if not res or res.txts is None:
+        return [""] * n_parts
+    names = [[] for _ in spans]
+    for box, txt in zip(res.boxes, res.txts):
+        cy = top + (box[0][1] + box[2][1]) / 2
+        best = min(range(len(spans)), key=lambda i: 0 if spans[i][0] - 15 <= cy <= spans[i][1] + 15 else min(abs(cy - spans[i][0]), abs(cy - spans[i][1])))
+        names[best].append((cy, txt.strip()))
+    return [" ".join(t for _, t in sorted(n)).strip() for n in names] + [""] * (n_parts - len(spans))
+
+
 def fit_box_count(boxes, want):
     """Split the widest boxes / merge the narrowest neighbours until there are `want` boxes."""
     boxes = [dict(b) for b in boxes]
@@ -219,11 +265,12 @@ def recognize_page(png_path, gray):
     part = root.find("part")
     want = len(part.findall("measure")) if part is not None else len(boxes)
     boxes = fit_box_count(boxes, want)
+    labels = part_labels(multi_staffs, to_input, gray, len(root.findall("part")))
     try:
         debug.clean_debug_files_from_previous_runs()
     except Exception:
         pass
-    return xml, boxes, staff_height
+    return xml, boxes, staff_height, labels
 
 
 def main():
@@ -237,8 +284,8 @@ def main():
             img = pdf[k - 1].render(scale=DPI / 72).to_pil().convert("L")
             png = os.path.join(work, f"page{k}.png")
             img.save(png)
-            xml, boxes, staff_height = recognize_page(png, np.asarray(img))
-            say({"page": k, "xml": xml, "measures": boxes, "staffHeight": staff_height})
+            xml, boxes, staff_height, labels = recognize_page(png, np.asarray(img))
+            say({"page": k, "xml": xml, "measures": boxes, "staffHeight": staff_height, "labels": labels})
         except Exception as e:  # one bad page must not stop the rest
             say({"page": k, "error": str(e) or e.__class__.__name__, "trace": traceback.format_exc()[-800:]})
     say({"done": True})

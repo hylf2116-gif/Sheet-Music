@@ -322,7 +322,10 @@ async function partialResult(pageResults) {
 const HOMR_PYTHON = process.env.HOMR_PYTHON || path.join(process.env.HOME || '', 'homr-env/bin/python');
 const HOMR_RUNNER = path.join(__dirname, 'homr_runner.py');
 function homrAvailable() {
-  return process.env.OMR_ENGINE !== 'audiveris' && fs.existsSync(HOMR_PYTHON) && fs.existsSync(HOMR_RUNNER);
+  if (process.env.OMR_ENGINE === 'audiveris') return false;
+  // too little memory for the AI reader (it would be killed half way): use Audiveris instead
+  if (process.env.OMR_ENGINE !== 'homr' && memoryLimitBytes() < 2.5 * 1024 ** 3) return false;
+  return fs.existsSync(HOMR_PYTHON) && fs.existsSync(HOMR_RUNNER);
 }
 
 /** Pages first..last in one homr process. Calls onPage({page, xml, measures, staffHeight}) as each is read. */
@@ -365,7 +368,19 @@ async function runHomr(pdfPath, workDir, { onProgress, onPartial, timeoutMs = 30
     if (part) onPartial?.(part);
   };
   const onPage = (msg) => {
-    if (msg.error) { failed.push(`page ${msg.page}: ${msg.error}`); return; }
+    // A cover, preface or catalogue page has no staves: it's a page without bars, not a failure
+    if (msg.error && /no staffs found|no noteheads or clefs found/i.test(msg.error)) {
+      got.set(msg.page, { page: msg.page, xml: null, measures: [] });
+      publish();
+      return;
+    }
+    if (msg.error) {
+      // a page the reader can't manage: skip just that page, keep all the others
+      failed.push(`page ${msg.page}: ${msg.error}`);
+      got.set(msg.page, { page: msg.page, xml: null, measures: [], failed: true });
+      publish();
+      return;
+    }
     got.set(msg.page, msg);
     publish();
   };
@@ -381,15 +396,33 @@ async function runHomr(pdfPath, workDir, { onProgress, onPartial, timeoutMs = 30
     }
     await Promise.all(jobs);
   }
-  if (failed.length || got.size < pages) throw new Error(`homr could not read ${failed.join('; ') || 'some pages'}`);
+  if (failed.length) console.warn(`homr skipped ${failed.length} page(s): ${failed.join('; ')}`);
+  if (got.size < pages) throw new Error('homr stopped before reading every page');
+  if (![...got.values()].some((p) => p.xml)) throw new Error('homr found no music in this PDF');
   return joinHomrPages(got, pages, false);
 }
 
-// homr processes at once: each uses several cores (OMR_PARALLEL overrides, like Audiveris).
+// Memory this server may use: the container's limit on a cloud host (cgroup), else the machine's.
+function memoryLimitBytes() {
+  for (const f of ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']) {
+    try {
+      const v = fs.readFileSync(f, 'utf8').trim();
+      const n = Number(v);
+      if (v !== 'max' && Number.isFinite(n) && n > 0 && n < os.totalmem() * 4) return Math.min(n, os.totalmem());
+    } catch {}
+  }
+  return os.totalmem();
+}
+// One homr reader needs about 2 GB of memory (measured: 1.9–2.1 GB per process).
+const HOMR_MEM = 2.2 * 1024 ** 3;
+
+// homr processes at once: limited by cores and by memory (OMR_PARALLEL overrides).
 function homrParallel() {
   const n = Number(process.env.OMR_PARALLEL);
   if (n >= 1) return Math.floor(n);
-  return Math.max(1, Math.min(4, Math.floor(os.cpus().length / 4)));
+  const byCpu = Math.max(1, Math.floor(os.cpus().length / 4));
+  const byMem = Math.max(1, Math.floor((memoryLimitBytes() - 0.6 * 1024 ** 3) / HOMR_MEM));
+  return Math.min(4, byCpu, byMem);
 }
 
 /** Pages read so far → measures.json shape + one joined MusicXML. Partial: only pages 1..k in order. */
@@ -399,6 +432,7 @@ function joinHomrPages(got, pages, partial) {
   for (let k = 1; k <= pages; k++) {
     const p = got.get(k);
     if (!p) { if (partial) break; continue; }
+    if (!p.xml) continue;             // a page without music (cover, preface…)
     out.push({
       page: k - 1,
       measures: p.measures.map((m) => ({ n: ++n, x: m.x, y: m.y, w: m.w, h: m.h, ...(m.doubt ? { doubt: true } : {}) })),
@@ -407,7 +441,21 @@ function joinHomrPages(got, pages, partial) {
     xmls.push(p.xml);
   }
   if (!out.length) return null;
-  return { pages: out, measureCount: n, xml: renumberMeasures(joinPageParts(xmls)) };
+  let xml = renumberMeasures(joinPageParts(xmls));
+  // Part names printed on the score (read from the first page that has them) replace the
+  // reader's generic "Voice" / "Piano", so each part gets the right name and sound.
+  const count = (xml.match(/<score-part\b/g) || []).length;
+  const named = [...got.values()].sort((a, b) => a.page - b.page)
+    .map((p) => (p.labels || []).map(cleanLabel))
+    .find((l) => l.length === count && l.filter(Boolean).length >= Math.ceil(count / 2));
+  if (named) {
+    let i = 0;
+    xml = xml.replace(/(<score-part\b[^>]*>[\s\S]*?<part-name>)([^<]*)(<\/part-name>)/g, (all, a, old, b) => {
+      const name = named[i++];
+      return name ? a + xmlEscape(name) + b : all;
+    });
+  }
+  return { pages: out, measureCount: n, xml };
 }
 
 /**
@@ -463,6 +511,11 @@ function joinPageParts(xmls) {
   }
   let i = 0;
   return xmls[base].replace(/(<part\s+id="[^"]+"\s*>)([\s\S]*?)(<\/part>)/g, (all, open, body, close) => open + bodies[i++].join('') + close);
+}
+
+// A printed part name, tidied: no stray marks, at most a few words.
+function cleanLabel(t) {
+  return String(t || '').replace(/[^\p{L}\p{N} .\-/()]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
 }
 
 // Bars numbered 1, 2, 3… through the whole score (each page's MusicXML starts again at 1).
