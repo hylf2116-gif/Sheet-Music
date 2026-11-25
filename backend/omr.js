@@ -401,7 +401,7 @@ function joinHomrPages(got, pages, partial) {
     if (!p) { if (partial) break; continue; }
     out.push({
       page: k - 1,
-      measures: p.measures.map((m) => ({ n: ++n, x: m.x, y: m.y, w: m.w, h: m.h })),
+      measures: p.measures.map((m) => ({ n: ++n, x: m.x, y: m.y, w: m.w, h: m.h, ...(m.doubt ? { doubt: true } : {}) })),
       ...(p.staffHeight ? { staffHeight: p.staffHeight } : {}),
     });
     xmls.push(p.xml);

@@ -194,8 +194,8 @@ export default function Toolbar(p: ToolbarProps) {
 
   // Desktop and iPad landscape: the Clear Paper glass room (tool dock left, capsule top).
   // Its tool options open in a panel beside the dock, so they use the stacked (sidebar) rows.
-  const glass = p.pos === 'top' && !p.compact;
-  const rowTop = p.pos === 'top' && !glass;
+  const glass = p.pos === 'top';            // phones too: a glass capsule + a tool strip
+  const rowTop = false;
 
   // ── Shared atoms ────────────────────────────────────────────────────────────
 
@@ -430,7 +430,7 @@ export default function Toolbar(p: ToolbarProps) {
         <input type="range" min={10} max={90} step={5} aria-label={t('Highlighter opacity')}
           value={Math.round(p.highlighterOpacity * 100)}
           onChange={e => p.setHighlighterOpacity(Number(e.target.value) / 100)}
-          className={rowTop ? 'w-20' : 'flex-1 min-w-0'} style={{ accentColor: '#6366f1' }} />
+          className={rowTop ? 'w-20' : 'flex-1 min-w-0'} style={{ accentColor: 'var(--cp-ink)' }} />
         <span className="text-[10px] text-gray-500 w-7 text-right tabular-nums select-none">{Math.round(p.highlighterOpacity * 100)}%</span>
       </div>
     );
@@ -594,7 +594,7 @@ export default function Toolbar(p: ToolbarProps) {
   // TOP BAR
   // ─────────────────────────────────────────────────────────────────────────
 
-  if (p.pos === 'top' && p.compact) {
+  if (p.pos === 'top' && p.compact && !glass) { // older phone bar (the glass layout above replaces it)
     const iconBtn = 'w-10 h-10 rounded-lg flex items-center justify-center text-gray-600 active:bg-black/[0.06] disabled:opacity-30 transition-colors shrink-0';
     const contextRow = isAnnotate && (isDraw || p.activeTool === 'eraser');
     return (
@@ -674,10 +674,13 @@ export default function Toolbar(p: ToolbarProps) {
     return (
       <>
         {/* Room capsule: home, pages, people, share */}
-        <div className="cp-glass q-top fixed z-[45] flex items-center gap-1 rounded-full pl-1.5 pr-1.5 py-1.5 select-none"
-          style={{ top: 'calc(12px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)', maxWidth: 'calc(100vw - 32px)' }}>
+        <div className={`cp-glass fixed z-[45] flex items-center gap-1 rounded-full pl-1.5 pr-1.5 py-1.5 select-none ${p.compact ? 'q-drop' : 'q-top'}`}
+          style={p.compact
+            ? { top: 'calc(8px + env(safe-area-inset-top))', left: 'calc(8px + env(safe-area-inset-left))', right: 'calc(8px + env(safe-area-inset-right))' }
+            : { top: 'calc(12px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)', maxWidth: 'calc(100vw - 32px)' }}>
           <button onClick={p.onGoHome} title={t('Home')} aria-label={t('Home')} className="cp-btn w-9 h-9 rounded-full"><LogoMark size={22} /></button>
-          {p.numPages > 1 && (
+          {p.compact && <span className="flex-1" />}
+          {p.numPages > 1 && !p.compact && (
             <>
               <span className="cp-sep w-px h-5 mx-1" />
               <button onClick={() => p.onPageChange(p.currentPage - 1)} disabled={p.currentPage === 0} aria-label={t('Previous page')} className="cp-btn w-8 h-8 rounded-full"><Icon name="chevronL" size={16} /></button>
@@ -706,17 +709,20 @@ export default function Toolbar(p: ToolbarProps) {
             style={{ background: p.copied ? '#2f9e5b' : 'var(--cp-ink)', color: 'var(--cp-paper)' }}>
             <Icon name={p.copied ? 'check' : 'link'} size={14} />{p.copied ? t('Copied') : t('Share')}
           </button>
-          <PosMenu />
+          {!p.compact && <PosMenu />}
         </div>
 
-        {/* Tool dock */}
-        <div ref={dockRef} className="cp-glass q-left fixed z-[45] flex flex-col items-center gap-0.5 p-1.5 rounded-[22px] select-none"
-          style={{ left: 'calc(12px + env(safe-area-inset-left))', top: '50%', transform: 'translateY(-50%)', maxHeight: 'calc(100vh - 140px)' }}>
+        {/* Tool dock (a scrolling strip under the capsule on phones) */}
+        <div ref={dockRef} className={`cp-glass fixed z-[45] flex items-center gap-0.5 p-1.5 select-none ${p.compact
+            ? 'q-drop flex-row rounded-[20px] overflow-x-auto no-scrollbar' : 'q-left flex-col rounded-[22px]'}`}
+          style={p.compact
+            ? { top: 'calc(62px + env(safe-area-inset-top))', left: 'calc(8px + env(safe-area-inset-left))', right: 'calc(8px + env(safe-area-inset-right))' }
+            : { left: 'calc(12px + env(safe-area-inset-left))', top: '50%', transform: 'translateY(-50%)', maxHeight: 'calc(100vh - 140px)' }}>
           {pillAt && <span className="cp-pill" style={{ left: 0, top: 0, width: 40, height: 40, transform: `translate(${pillAt.x}px, ${pillAt.y}px)`,
             boxShadow: p.activeTool === 'laser' ? 'inset 0 0 0 1.2px #e5484d' : undefined }} />}
           {GROUPS.map((g, gi) => (
-            <div key={gi} className="flex flex-col items-center gap-0.5">
-              {gi > 0 && <span className="cp-sep h-px w-6 my-1" />}
+            <div key={gi} className={`flex items-center gap-0.5 shrink-0 ${p.compact ? 'flex-row' : 'flex-col'}`}>
+              {gi > 0 && <span className={p.compact ? 'cp-sep w-px h-6 mx-1' : 'cp-sep h-px w-6 my-1'} />}
               {g.map(id => (
                 <button key={id} data-tool={id} onClick={e => pick(id, e.currentTarget)} title={label(id)} aria-label={label(id)}
                   data-tour={id === 'pen' ? 'draw' : id === 'text' ? 'text' : undefined}
@@ -726,9 +732,9 @@ export default function Toolbar(p: ToolbarProps) {
               ))}
             </div>
           ))}
-          <span className="cp-sep h-px w-6 my-1" />
+          <span className={p.compact ? 'cp-sep w-px h-6 mx-1 shrink-0' : 'cp-sep h-px w-6 my-1'} />
           <button onClick={e => { if (hasOptions(p.activeTool)) { const r = e.currentTarget.getBoundingClientRect(); setOptsTop(Math.max(70, Math.min(window.innerHeight - 380, r.top - 120))); setOptsOpen(o => !o); } else { p.setActiveTool('pen'); setOptsOpen(true); } }}
-            title={t('Color and size')} aria-label={t('Color and size')} className="w-10 h-10 grid place-items-center rounded-xl transition-transform active:scale-90">
+            title={t('Color and size')} aria-label={t('Color and size')} className="w-10 h-10 grid place-items-center rounded-xl transition-transform active:scale-90 shrink-0">
             <span key={swatch} className="block w-[22px] h-[22px] rounded-full cp-pop" style={{ background: swatch, boxShadow: '0 0 0 2px var(--cp-glass-strong), 0 0 0 3px var(--cp-hair)' }} />
           </button>
           <button onClick={p.onUndo} disabled={!p.canUndo} title={t('Undo (Cmd/Ctrl+Z)')} aria-label={t('Undo')} className="cp-btn w-10 h-10"><Icon name="undo" size={17} /></button>
@@ -740,8 +746,10 @@ export default function Toolbar(p: ToolbarProps) {
         {showOpts && (
           <>
             <div className="fixed inset-0 z-[44]" onClick={() => setOptsOpen(false)} />
-            <div key={p.activeTool} className="cp-glass cp-solid cp-pop q-left fixed z-[46] rounded-[20px] pt-3 pb-1 w-[236px] select-none"
-              style={{ left: 'calc(72px + env(safe-area-inset-left))', top: optsTop, transformOrigin: 'left center', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto' }}>
+            <div key={p.activeTool} className={`cp-glass cp-solid cp-pop fixed z-[46] rounded-[20px] pt-3 pb-1 select-none ${p.compact ? 'q-drop' : 'q-left w-[236px]'}`}
+              style={p.compact
+                ? { top: 'calc(118px + env(safe-area-inset-top))', left: 'calc(8px + env(safe-area-inset-left))', right: 'calc(8px + env(safe-area-inset-right))', transformOrigin: 'top center', maxHeight: '55vh', overflowY: 'auto' }
+                : { left: 'calc(72px + env(safe-area-inset-left))', top: optsTop, transformOrigin: 'left center', maxHeight: 'calc(100vh - 100px)', overflowY: 'auto' }}>
               <p className="cp-label px-4 pb-2">{label(p.activeTool)}</p>
               <ContextPanel />
             </div>

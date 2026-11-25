@@ -66,11 +66,65 @@ def snap_to_line(gray, x, y0, y1, reach):
     return float(lo + best)
 
 
+def find_bar_lines(gray, x0, x1, ytop, ybot, unit):
+    """Vertical lines that cross a staff band from top to bottom: bar lines (and some stems).
+    Only used as candidates: the boxes take the ones nearest to where the AI put its bar lines."""
+    h, w = gray.shape
+    lo, hi = max(0, int(x0 + 1.5 * unit)), min(w, int(x1 - 0.8 * unit))
+    ya, yb = max(0, int(ytop + 1)), min(h, int(ybot - 1))
+    if hi - lo < 10 or yb - ya < 5:
+        return []
+    good = (gray[ya:yb, lo:hi] < 140).mean(axis=0) >= 0.86
+    runs, i = [], 0
+    while i < len(good):
+        if good[i]:
+            j = i
+            while j + 1 < len(good) and good[j + 1]:
+                j += 1
+            runs.append((lo + i, lo + j))
+            i = j + 1
+        else:
+            i += 1
+    runs = [r for r in runs if r[1] - r[0] <= max(3, 0.9 * unit)]
+    xs = []
+    for a_, b_ in runs:
+        c = (a_ + b_) / 2
+        if xs and c - xs[-1] < 1.2 * unit:
+            xs[-1] = max(xs[-1], c)
+        else:
+            xs.append(c)
+    return [x for x in xs if x < x1 - 1.0 * unit]
+
+
+def choose(cands, est):
+    """Pick len(est) of the candidate x positions, in order, closest to the estimates (DP)."""
+    n, m = len(est), len(cands)
+    INF = float("inf")
+    dp = [[INF] * (m + 1) for _ in range(n + 1)]
+    take = [[False] * (m + 1) for _ in range(n + 1)]
+    for j in range(m + 1):
+        dp[0][j] = 0
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            skip = dp[i][j - 1]
+            use = dp[i - 1][j - 1] + abs(cands[j - 1] - est[i - 1])
+            if use <= skip:
+                dp[i][j], take[i][j] = use, True
+            else:
+                dp[i][j] = skip
+    out, i, j = [], n, m
+    while i > 0 and j > 0:
+        if take[i][j]:
+            out.append(cands[j - 1]); i -= 1; j -= 1
+        else:
+            j -= 1
+    return out[::-1]
+
+
 def measure_boxes(multi_staffs, voices, to_input, gray):
-    """One box per bar: each system's height, split at its bar lines.
-    Bar positions come from the recognized bar lines (approximate) snapped to the real lines."""
+    """One box per bar. The AI says how many bars each system has; the bar lines printed on
+    the page say where they are (found in the image). AI positions only break ties."""
     height, width = gray.shape
-    # per system: bar count and the approximate x of each bar line (input image pixels)
     systems, bars, xs, has_notes = [], 0, [], False
     for s in (voices[0] if voices else []):
         if s.rhythm == "newline":
@@ -86,7 +140,7 @@ def measure_boxes(multi_staffs, voices, to_input, gray):
     if bars or has_notes:
         systems.append((bars + (1 if has_notes else 0), xs))
 
-    boxes, staff_h = [], []
+    boxes, staff_h, checks = [], [], []
     for row, (n, bar_xs) in zip(multi_staffs, systems):
         if n <= 0:
             continue
@@ -96,16 +150,35 @@ def measure_boxes(multi_staffs, voices, to_input, gray):
         _, sy1 = to_input((0.0, float(top.max_y)))
         staff_h.append((sy1 - y0) / height)
         unit = (sy1 - y0) / 4
-        # the bar lines between bars: the first n-1 (a line closing the system is its right edge)
-        inner = [x for x in bar_xs[:n - 1] if x is not None]
-        inner = sorted(snap_to_line(gray, min(max(x, x0 + unit), x1 - unit), y0, sy1, 4 * unit) for x in inner)
-        edges = [x0] + inner + [x1]
-        if len(edges) - 1 != n or any(b - a < unit for a, b in zip(edges, edges[1:])):
-            edges = [x0 + (x1 - x0) * i / n for i in range(n + 1)]   # fall back: even split, right count
+        # where the AI thinks the bar lines are (or an even split where it doesn't say)
+        est = [x for x in bar_xs[:n - 1]]
+        est = [e if e is not None else x0 + (x1 - x0) * (k + 1) / n for k, e in enumerate(est)]
+        while len(est) < n - 1:
+            est.append(x0 + (x1 - x0) * (len(est) + 1) / n)
+        # vertical lines on the page (bar lines, plus some stems): across the whole system, and
+        # if that finds too few (staves not joined), the top staff and the bottom staff as well
+        lines = find_bar_lines(gray, x0, x1, y0, y1, unit)
+        if len(lines) < n - 1 and len(row.staffs) > 1:
+            _, by0 = to_input((0.0, float(bottom.min_y)))
+            more = find_bar_lines(gray, x0, x1, y0, sy1, unit) + find_bar_lines(gray, x0, x1, by0, y1, unit)
+            lines = sorted(set(lines) | set(more))
+        if len(lines) >= n - 1:
+            inner = choose(lines, sorted(est))
+            checks.append(1.0)
+        else:
+            # not enough printed lines found: use the ones found, estimates for the rest
+            extra = [e for e in sorted(est) if all(abs(e - l) > 2 * unit for l in lines)]
+            inner = sorted(lines + extra)
+            inner = choose(inner, sorted(est)) if len(inner) >= n - 1 else inner
+            checks.append(len(lines) / max(1, n - 1))
+        edges = [x0] + sorted(inner) + [x1]
+        if len(edges) != n + 1 or any(b - a < unit for a, b in zip(edges, edges[1:])):
+            edges = [x0 + (x1 - x0) * i / n for i in range(n + 1)]
         for i in range(n):
             boxes.append({"x": edges[i] / width, "y": y0 / height,
                           "w": (edges[i + 1] - edges[i]) / width, "h": (y1 - y0) / height})
     staff_height = sorted(staff_h)[len(staff_h) // 2] if staff_h else None
+    sys.stderr.write(f"bar lines found on the page for {sum(1 for c in checks if c >= 1)}/{len(checks)} systems\n")
     return boxes, staff_height
 
 

@@ -59,6 +59,8 @@ function loadSamples(ctx: AudioContext, inst: 'piano' | 'cello' | 'violin'): Pro
     } catch { return null; }
   })();
   loaded.set(inst, p);
+  // A failed download is not remembered: the next Play tries again (instead of beeping forever)
+  void p.then(set => { if (!set) { loaded.delete(inst); manifestPromise = null; } });
   return p;
 }
 
@@ -164,13 +166,15 @@ export class ScorePlayer {
     const run = ++this.run;              // a newer play/stop cancels this one
     this.startT = fromT;
     const ctx = this.ensureContext();
-    void ctx.resume();
+    // wake the audio first (browsers start it asleep); notes scheduled before that would be lost
+    try { await Promise.race([ctx.resume(), new Promise(r => setTimeout(r, 800))]); } catch {}
+    if (run !== this.run) return;
     const parts = new Set(this.perf.notes.map(n => n.part));
     const want = [...new Set([...parts].map(p => this.soundOf(p)))].filter(w => !this.samples.has(w));
     if (want.length) {
       this.onLoading(true);
       const sets = await Promise.all(want.map(w => loadSamples(ctx, w)));
-      want.forEach((w, i) => this.samples.set(w, sets[i]));
+      want.forEach((w, i) => { if (sets[i]) this.samples.set(w, sets[i]); });
       this.onLoading(false);
     }
     if (run !== this.run) return;        // stopped (or restarted) while the sounds were loading

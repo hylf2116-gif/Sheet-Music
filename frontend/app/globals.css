@@ -496,6 +496,8 @@ html.ui-idle .q-left   { transform: translate(-130%, -50%) !important; opacity: 
 html.ui-idle .q-right  { transform: translate(130%, -50%) !important;  opacity: 0; pointer-events: none; }
 html.ui-idle .q-top    { transform: translate(-50%, -160%) !important; opacity: 0; pointer-events: none; }
 html.ui-idle .q-fade { opacity: 0; pointer-events: none; }
+html.ui-idle .q-drop { transform: translateY(-180%) !important; opacity: 0; pointer-events: none; }
+.q-drop { transition: transform .55s var(--cp-spring), opacity .35s var(--cp-ease); }
 .q-fade { transition: opacity .35s var(--cp-ease); }
 html.ui-idle .q-bottom-extra { opacity: 0; max-width: 0 !important; padding: 0 !important; margin: 0 !important; overflow: hidden; pointer-events: none; }
 .q-bottom-extra { transition: opacity .3s var(--cp-ease), max-width .5s var(--cp-spring); max-width: 1200px; }
