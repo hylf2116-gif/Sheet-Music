@@ -8,7 +8,7 @@ import { uid } from '../lib/uid';
 
 export type SymbolSize = 'S' | 'M' | 'L';
 // Lesson markings are drawn larger than engraved print, so even S is above print size.
-export const SYMBOL_SIZE_FACTOR: Record<SymbolSize, number> = { S: 1.2, M: 1.8, L: 2.6 };
+export const SYMBOL_SIZE_FACTOR: Record<SymbolSize, number> = { S: 0.75, M: 1.05, L: 1.5 };
 // Bravura's fingering digits are tiny at print size; enlarge them so they stay readable.
 const SYMBOL_BOOST: Partial<Record<SymbolId, number>> = {
   finger0: 1.6, finger1: 1.6, finger2: 1.6, finger3: 1.6, finger4: 1.6, thumb: 1.6,
