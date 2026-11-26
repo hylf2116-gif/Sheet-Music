@@ -60,6 +60,8 @@ export function playOrder(model: ScoreModel): number[] {
     if (!jumped) {
       if (b.repeatEnd && pass < b.repeatEnd) { pass++; i = start; inEnding = false; continue; } // jump back: not "leaving" the endings
       if (b.repeatEnd && !b.ending) { pass = 1; start = i + 1; }
+      // a movement ends here: a later repeat sign without a start sign goes back only to here
+      else if (b.sectionEnd && !b.repeatEnd) { pass = 1; start = i + 1; }
     }
     i++;
   }

@@ -27,6 +27,7 @@ export interface ScoreBar {
   repeatEnd?: number;          // :|  (times to play, usually 2)
   ending?: number[];           // first/second ending numbers this bar belongs to
   repaired?: boolean;          // recognition read the wrong length here; notes were fitted to the bar
+  sectionEnd?: boolean;        // final / double bar line: a movement or section ends here
   segno?: boolean;             // 𝄋 (D.S. jumps back here)
   coda?: boolean;              // 𝄌 the coda starts here
   toCoda?: boolean;            // "To Coda": after the D.C./D.S. jump, skip to the coda from here
@@ -106,6 +107,8 @@ export function parseMusicXml(xml: string): ScoreModel {
   }
   const parts: string[] = [];
   const partInfo: { clef?: string; staves: number }[] = [];
+  const fills: number[][] = [];   // [part][bar] length of the bar's notes + rests, in quarter notes
+  const starts: number[][] = [];  // [part][bar] where that part's bar began (its own count)
 
   for (const part of Array.from(doc.querySelectorAll('score-partwise > part'))) {
     const partIndex = parts.length;
@@ -127,15 +130,12 @@ export function parseMusicXml(xml: string): ScoreModel {
     const measures = Array.from(part.children).filter(c => c.tagName === 'measure');
 
     measures.forEach((m, i) => {
-      // every part follows the first part's bar grid (a part that rests for a page stays in step)
-      if (barsByIndex[i]) barStart = barsByIndex[i].beat;
       let pos = 0;          // position inside the bar, in divisions
       let maxPos = 0;
       let lastStart = 0;    // start of the previous note (for chords)
       const singleVoice = !Array.from(m.children).some(c => c.tagName === 'backup' || c.tagName === 'forward');
       const barInfo: ScoreBar = { n: i + 1, beat: barStart, beats: 0 };
       const pendingGrace: ScoreNote[] = [];
-      const firstNote = notes.length;   // notes of this bar start here (for the rhythm repair below)
 
       // A big step up with no crescendo written (the AI reader never writes hairpins): grow into it
       // over the two beats before, as a player would, instead of jumping.
@@ -211,6 +211,8 @@ export function parseMusicXml(xml: string): ScoreModel {
           if (snd?.hasAttribute('dalsegno') || /\bd\.?\s*s\.?(\s|$)|dal\s*segno/i.test(w)) barInfo.jump = 'ds';
         }
         if (tag === 'barline') {
+          const style = el.querySelector('bar-style')?.textContent?.trim();
+          if (style === 'light-heavy' || style === 'heavy-heavy' || style === 'light-light') barInfo.sectionEnd = true;
           const rep = el.querySelector('repeat');
           if (rep?.getAttribute('direction') === 'forward') barInfo.repeatStart = true;
           if (rep?.getAttribute('direction') === 'backward') barInfo.repeatEnd = Number(rep.getAttribute('times')) || 2;
@@ -290,25 +292,13 @@ export function parseMusicXml(xml: string): ScoreModel {
           if (ties.includes('start')) tied.set(midi, note);
         }
       }
-      // A bar lasts as long as its time signature, unless it is a pickup / incomplete bar.
+      // How long this part's bar really is (its notes and rests), and where it began in this part.
+      // The final bar lengths are decided below from all parts together.
       const filled = maxPos / divisions;
       const pickup = filled > 0 && filled < beatsPerBar - 1e-6 && (i === 0 || m.getAttribute('implicit') === 'yes');
-      // Rhythm repair: recognition often reads a bar a little too long or too short (a missed dot,
-      // tuplet or beam). Played as read, the music stalls or leaves a hole. Squeeze/stretch the bar's
-      // notes to fill exactly one bar instead, so the pulse stays steady.
-      const ratio = filled > 0 ? beatsPerBar / filled : 1;
-      if (!pickup && Math.abs(ratio - 1) > 1e-6 && ratio > 0.6 && ratio < 1.5 && i < measures.length - 1) {
-        for (let k = firstNote; k < notes.length; k++) {
-          const n = notes[k];
-          if (n.bar !== i + 1 || n.part !== partIndex) continue;
-          n.beat = barStart + (n.beat - barStart) * ratio;
-          n.dur *= ratio;
-        }
-        barInfo.repaired = true;
-        barInfo.beats = beatsPerBar;
-      } else {
-        barInfo.beats = pickup ? filled : Math.max(beatsPerBar, filled);
-      }
+      barInfo.beats = pickup ? filled : Math.max(beatsPerBar, filled);
+      (fills[partIndex] ||= [])[i] = filled;
+      (starts[partIndex] ||= [])[i] = barStart;
       const existing = barsByIndex[i];
       if (!existing) barsByIndex[i] = barInfo;
       else { // other parts may carry the repeat signs too
@@ -316,6 +306,7 @@ export function parseMusicXml(xml: string): ScoreModel {
         existing.repeatEnd ||= barInfo.repeatEnd;
         existing.ending ||= barInfo.ending;
         existing.repaired ||= barInfo.repaired;
+        existing.sectionEnd ||= barInfo.sectionEnd;
         existing.segno ||= barInfo.segno; existing.coda ||= barInfo.coda; existing.toCoda ||= barInfo.toCoda;
         existing.fine ||= barInfo.fine; existing.jump ||= barInfo.jump;
       }
@@ -323,6 +314,45 @@ export function parseMusicXml(xml: string): ScoreModel {
     });
     if (wedge) for (const n of wedgeNotes) n.vel = vel;
   }
+
+  // ── One bar grid for all parts ──
+  // Recognition writes a time signature at every line and often guesses it differently (4/4, 1/4,
+  // 3/8 … even differently per part on the same line), while the notes themselves are mostly right.
+  // So each bar's length comes from what the parts actually contain: the length most parts agree
+  // on. Every part is then fitted to it, so bars join up with no squeezing and no silent gaps.
+  const nBars = barsByIndex.length;
+  const barLen: number[] = [];
+  for (let i = 0; i < nBars; i++) {
+    const vals = fills.map(f => f?.[i] ?? 0).filter(v => v > 1e-6).sort((a, b) => a - b);
+    let len = vals.length ? vals[Math.floor((vals.length - 1) / 2)] : (barsByIndex[i]?.beats ?? 0);
+    // most common value wins when parts disagree (a part that dropped a note reads short)
+    const counts = new Map<number, number>();
+    for (const v of vals) { const k = Math.round(v * 8) / 8; counts.set(k, (counts.get(k) ?? 0) + 1); }
+    let best = 0; for (const [k, c] of counts) if (c > best || (c === best && k > len)) { best = c; len = c > 1 ? k : len; }
+    barLen[i] = len > 1e-6 ? len : (barsByIndex[i]?.beats || 1);
+  }
+  const gridStart: number[] = [];
+  let acc = 0;
+  for (let i = 0; i < nBars; i++) { gridStart[i] = acc; acc += barLen[i]; }
+  for (const n of notes) {
+    const p = n.part ?? 0, i = n.bar - 1;
+    const from = starts[p]?.[i], fill = fills[p]?.[i] ?? 0;
+    if (from == null || gridStart[i] == null) continue;
+    const ratio = fill > 1e-6 ? barLen[i] / fill : 1;
+    const scale = ratio >= 0.5 && ratio <= 2 ? ratio : 1;
+    n.beat = gridStart[i] + (n.beat - from) * scale;
+    n.dur *= scale;
+    if (Math.abs(scale - 1) > 1e-3 && barsByIndex[i]) barsByIndex[i].repaired = true;
+  }
+  // tempo marks were placed on the first part's count: move them onto the shared grid
+  const toGrid = (beat: number) => {
+    const s0 = starts[0] ?? [];
+    let i = 0; while (i + 1 < nBars && s0[i + 1] != null && s0[i + 1] <= beat + 1e-6) i++;
+    const fill = fills[0]?.[i] || barLen[i];
+    return gridStart[i] + Math.max(0, beat - (s0[i] ?? 0)) * (barLen[i] / (fill || 1));
+  };
+  for (const e of tempoEvents) e.beat = toGrid(e.beat);
+  barsByIndex.forEach((b, i) => { if (b) { b.beat = gridStart[i]; b.beats = barLen[i]; } });
 
   notes.sort((a, b) => a.beat - b.beat || a.midi - b.midi);
   const bars = barsByIndex.filter(Boolean);
