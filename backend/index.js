@@ -981,7 +981,7 @@ function emitMemberCount(roomId) {
   const ids = [...(io.sockets.adapter.rooms.get(roomId) ?? [])];
   const count = ids.length;
   // Who is in the room (names only), for the host's people list
-  const members = ids.map((sid) => ({ id: sid, name: socketNames[sid] || 'Guest', host: room.hostSockets.has(sid) }));
+  const members = ids.map((sid) => ({ id: sid, name: socketNames[sid] || 'Guest', host: room.hostSockets.has(sid), coHost: !!io.sockets.sockets.get(sid)?.data?.coHost }));
   for (const hSid of room.hostSockets) {
     if (io.sockets.sockets.get(hSid)) {
       io.to(hSid).emit('room-members-count', count);
@@ -993,7 +993,8 @@ function emitMemberCount(roomId) {
 // ── Socket.IO ──────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
   let currentRoom = null;
-  let isHostSocket = false;    // set in join-room, used by all event handlers on this socket
+  // Host status lives on socket.data so another host can give or take it (co-host, transfer).
+  // socket.data.owner = joined with the room's host credentials (only owners can share or hand over).
   let clientIdForSocket = '';  // stable clientId for this socket session
 
   socket.on('join-room', async (data) => {
@@ -1011,18 +1012,18 @@ io.on('connection', (socket) => {
 
     clientIdForSocket = clientId || socket.id; // fallback for legacy clients
     socketClientId[socket.id] = clientIdForSocket;
-    isHostSocket = false;
+    socket.data.isHost = false;
     if (!room.hostSockets) room.hostSockets = new Set(); // defensive init
 
     // === Host credential verification ===
     if (room.hostTokenHash) {
       // Room already has credentials — check in order: hostToken → Supabase token
       if (hostToken && safeCompareHash(hashToken(hostToken), room.hostTokenHash)) {
-        isHostSocket = true;
+        socket.data.isHost = true;
       } else if (supabaseToken && room.hostUserId) {
         try {
           const userId = await verifySupabaseToken(supabaseToken);
-          if (userId && userId === room.hostUserId) isHostSocket = true;
+          if (userId && userId === room.hostUserId) socket.data.isHost = true;
         } catch {}
       }
     } else {
@@ -1033,7 +1034,7 @@ io.on('connection', (socket) => {
         [...room.hostSockets].some((sid) => io.sockets.sockets.get(sid));
 
       if (!anyHostConnected) {
-        isHostSocket = true;
+        socket.data.isHost = true;
         room.hostClientId = clientIdForSocket;
         const newToken = crypto.randomBytes(32).toString('hex');
         room.hostTokenHash = hashToken(newToken);
@@ -1047,7 +1048,9 @@ io.on('connection', (socket) => {
       }
     }
 
-    if (isHostSocket) {
+    socket.data.owner = socket.data.isHost;
+    socket.data.coHost = false;
+    if (socket.data.isHost) {
       room.hostSockets.add(socket.id);
       room.hostId = socket.id;
       saveRooms();
@@ -1080,12 +1083,12 @@ io.on('connection', (socket) => {
     socket.emit('load-shapes', room.shapes);
     socket.emit('chat-history', room.messages || []);
     socket.emit('room-info', {
-      isHost: isHostSocket,
+      isHost: socket.data.isHost,
       raisedHands: room.raisedHands,
       currentPage: room.currentPage ?? 0,
     });
     // A room whose score hasn't been read yet (e.g. after a server restart): start when the teacher comes in
-    if (isHostSocket && !omrJobs[roomPdfFile(room)?.stem ?? '']) autoStartOmr(room);
+    if (socket.data.isHost && !omrJobs[roomPdfFile(room)?.stem ?? '']) autoStartOmr(room);
     socket.emit('omr-state', omrStateFor(room));
     room.lastActive = new Date().toISOString();
     socket.emit('play-order', { order: room.playOrder ?? null });
@@ -1093,7 +1096,7 @@ io.on('connection', (socket) => {
     if (!room.personNames) room.personNames = {};
     const nameChanged = room.personNames[clientIdForSocket] !== nick;
     room.personNames[clientIdForSocket] = nick;
-    if (ensurePersonColor(room, clientIdForSocket, isHostSocket) || (nameChanged && room.colorMode && room.colorMode !== 'free')) {
+    if (ensurePersonColor(room, clientIdForSocket, socket.data.isHost) || (nameChanged && room.colorMode && room.colorMode !== 'free')) {
       saveRooms();
       io.to(roomId).emit('person-colors', personColorsPayload(room));
     } else {
@@ -1107,7 +1110,7 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room || currentRoom !== roomId || !isHexColor(color) || typeof clientId !== 'string') return;
     if (!room.colorMode || room.colorMode === 'free') return;
-    const allowed = isHostSocket || (room.colorMode === 'self' && clientId === clientIdForSocket);
+    const allowed = socket.data.isHost || (room.colorMode === 'self' && clientId === clientIdForSocket);
     if (!allowed || !room.personColors || !(clientId in room.personColors)) return;
     room.personColors[clientId] = color.toLowerCase();
     saveRooms();
@@ -1118,7 +1121,7 @@ io.on('connection', (socket) => {
   // pageMap[oldPage] = new page index, or -1 if that page was removed. Annotations move with their pages.
   socket.on('replace-score', ({ roomId, pdfUrl, pageMap, pageCount }) => {
     const room = rooms[roomId];
-    if (!room || currentRoom !== roomId || !isHostSocket) return;
+    if (!room || currentRoom !== roomId || !socket.data.isHost) return;
     if (typeof pdfUrl !== 'string' || !/^\/uploads\/[\w-]+\.pdf$/i.test(pdfUrl)
         || !fs.existsSync(path.join(UPLOADS_DIR, path.basename(pdfUrl)))) return;
     if (!Array.isArray(pageMap) || !pageMap.every((n) => Number.isInteger(n) && n >= -1 && n < 100000)) return;
@@ -1143,7 +1146,7 @@ io.on('connection', (socket) => {
   // Page play order for repeats (e.g. [0,1,2,1,2,3]); null turns it off. Host only.
   socket.on('set-play-order', ({ roomId, order }) => {
     const room = rooms[roomId];
-    if (!room || currentRoom !== roomId || !isHostSocket) return;
+    if (!room || currentRoom !== roomId || !socket.data.isHost) return;
     if (order !== null && !(Array.isArray(order) && order.length > 0 && order.length <= 500
         && order.every((n) => Number.isInteger(n) && n >= 0 && n < 100000))) return;
     room.playOrder = order;
@@ -1154,7 +1157,7 @@ io.on('connection', (socket) => {
   // The host can switch the mode later (e.g. forgot to turn it on when creating the room).
   socket.on('set-color-mode', ({ roomId, mode }) => {
     const room = rooms[roomId];
-    if (!room || currentRoom !== roomId || !isHostSocket || !COLOR_MODES.includes(mode)) return;
+    if (!room || currentRoom !== roomId || !socket.data.isHost || !COLOR_MODES.includes(mode)) return;
     room.colorMode = mode;
     if (mode !== 'free') {
       if (!room.personColors) room.personColors = {};
@@ -1170,7 +1173,7 @@ io.on('connection', (socket) => {
   // OMR: only the host may start measure detection (slow, CPU-heavy).
   socket.on('omr-detect', (roomId) => {
     const room = rooms[roomId];
-    if (!room || !isHostSocket) return;
+    if (!room || !socket.data.isHost) return;
     const pdf = roomPdfFile(room);
     if (!pdf || !OMR_ENABLED || !(omr.homrAvailable() || omr.audiverisAvailable())) return socket.emit('omr-state', omrStateFor(room));
     startOmrJob(pdf);
@@ -1187,7 +1190,7 @@ io.on('connection', (socket) => {
 
   // Host "jump to measure" — everyone scrolls to that bar.
   socket.on('measure-jump', ({ roomId, n }) => {
-    if (!rooms[roomId] || !isHostSocket) return;
+    if (!rooms[roomId] || !socket.data.isHost) return;
     if (!(Number.isInteger(n) && n > 0 && n < 100000)) return;
     socket.to(roomId).emit('measure-jump', { n });
   });
@@ -1216,7 +1219,7 @@ io.on('connection', (socket) => {
     if (room.shapes.some((s) => s.id === shape.id)) return; // ignore duplicates
     // Students always own what they create. The host may keep another owner, because the
     // eraser and undo/redo re-create pieces of other people's strokes on their layers.
-    const saved = isHostSocket && typeof shape.ownerId === 'string' && shape.ownerId
+    const saved = socket.data.isHost && typeof shape.ownerId === 'string' && shape.ownerId
       ? shape
       : { ...shape, ownerId: clientIdForSocket };
     room.shapes.push(saved);
@@ -1231,7 +1234,7 @@ io.on('connection', (socket) => {
     const shape = room.shapes.find((s) => s.id === id);
     if (shape) {
       const isOwner = shape.ownerId === clientIdForSocket;
-      if (!isHostSocket && !isOwner) return;
+      if (!socket.data.isHost && !isOwner) return;
       room.shapes = room.shapes.filter((s) => s.id !== id);
       saveRooms();
     }
@@ -1244,7 +1247,7 @@ io.on('connection', (socket) => {
     const shape = room.shapes.find((s) => s.id === id);
     if (shape) {
       const isOwner = shape.ownerId === clientIdForSocket;
-      if (!isHostSocket && !isOwner) return;
+      if (!socket.data.isHost && !isOwner) return;
       room.shapes = room.shapes.filter((s) => s.id !== id);
       saveRooms();
     }
@@ -1255,7 +1258,7 @@ io.on('connection', (socket) => {
   socket.on('clear', (roomId) => {
     const room = rooms[roomId];
     if (!room || currentRoom !== roomId) return;
-    if (isHostSocket) {
+    if (socket.data.isHost) {
       room.shapes = [];
       saveRooms();
       socket.to(roomId).emit('clear');
@@ -1275,7 +1278,7 @@ io.on('connection', (socket) => {
     const shape = room.shapes.find((s) => s.id === id);
     if (shape) {
       const isOwner = shape.ownerId === clientIdForSocket;
-      if (!isHostSocket && !isOwner) return;
+      if (!socket.data.isHost && !isOwner) return;
     }
     room.shapes = room.shapes.map((s) => (s.id === id ? { ...s, ...changes } : s));
     saveRooms();
@@ -1284,19 +1287,19 @@ io.on('connection', (socket) => {
 
   socket.on('change-page', ({ roomId, page }) => {
     const room = rooms[roomId];
-    if (!room || !isHostSocket) return;
+    if (!room || !socket.data.isHost) return;
     room.currentPage = page;
     saveRooms();
     socket.to(roomId).emit('page-changed', page);
   });
 
   socket.on('scroll-sync', ({ roomId, ratio }) => {
-    if (!rooms[roomId] || !isHostSocket) return;
+    if (!rooms[roomId] || !socket.data.isHost) return;
     socket.to(roomId).emit('scroll-sync', ratio);
   });
 
   socket.on('metronome-update', ({ roomId, state }) => {
-    if (!rooms[roomId] || !isHostSocket) return;
+    if (!rooms[roomId] || !socket.data.isHost) return;
     socket.to(roomId).emit('metronome-update', state);
   });
 
@@ -1324,7 +1327,7 @@ io.on('connection', (socket) => {
   // Host dismisses a specific participant's raised hand
   socket.on('dismiss-hand', ({ roomId, socketId: targetId }) => {
     const room = rooms[roomId];
-    if (!room || !isHostSocket) return;
+    if (!room || !socket.data.isHost) return;
     room.raisedHands = room.raisedHands.filter((id) => id !== targetId);
     io.to(roomId).emit('lower-hand', { socketId: targetId });
   });
@@ -1355,7 +1358,7 @@ io.on('connection', (socket) => {
 
   // Synced playback: the host's player state goes to everyone else in the room (they choose to follow)
   socket.on('playback-sync', (msg) => {
-    if (!isHostSocket || !msg || typeof msg !== 'object') return;
+    if (!socket.data.isHost || !msg || typeof msg !== 'object') return;
     const roomId = String(msg.roomId || '');
     if (!rooms[roomId] || currentRoom !== roomId) return;
     const t = Number(msg.t), tempo = Number(msg.tempo);
@@ -1374,13 +1377,54 @@ io.on('connection', (socket) => {
       senderName: (socketNames[socket.id] || (senderName || 'Guest').trim() || 'Guest').slice(0, 64),
       text: trimmed,
       timestamp: new Date().toISOString(),
-      isHost: isHostSocket,
+      isHost: socket.data.isHost,
     };
     if (!room.messages) room.messages = [];
     room.messages.push(message);
     if (room.messages.length > 500) room.messages.shift();
     saveRooms(); // chat is kept with the room (and its score), also across server restarts
     io.to(roomId).emit('chat-message', message);
+  });
+
+  // ── Sharing and handing over the host role ──
+  function targetIn(roomId, targetId) {
+    const t = io.sockets.sockets.get(targetId);
+    return t && t.id !== socket.id && t.rooms.has(roomId) ? t : null;
+  }
+  // Temporary: make someone a co-host for this lesson (ends when they leave or are removed).
+  socket.on('set-cohost', ({ roomId, targetId, on }) => {
+    const room = rooms[roomId];
+    if (!room || currentRoom !== roomId || !socket.data.owner) return;
+    const t = targetIn(roomId, targetId);
+    if (!t || t.data.owner) return;
+    t.data.isHost = !!on; t.data.coHost = !!on;
+    if (on) room.hostSockets.add(t.id); else room.hostSockets.delete(t.id);
+    t.emit('host-status', { isHost: !!on, coHost: !!on, by: socketNames[socket.id] || 'Host' });
+    emitMemberCount(roomId);
+  });
+  // Permanent: the room (and its score in My Scores) now belongs to someone else; old links stop giving host.
+  socket.on('transfer-host', ({ roomId, targetId }) => {
+    const room = rooms[roomId];
+    if (!room || currentRoom !== roomId || !socket.data.owner) return;
+    const t = targetIn(roomId, targetId);
+    if (!t) return;
+    const token = crypto.randomBytes(32).toString('hex');
+    room.hostTokenHash = hashToken(token);
+    room.hostUserId = null;
+    room.hostClientId = socketClientId[t.id] || null;
+    saveRooms();
+    for (const sid of [...room.hostSockets]) {
+      const o = io.sockets.sockets.get(sid);
+      if (!o || o.id === t.id) continue;
+      o.data.isHost = false; o.data.owner = false; o.data.coHost = false;
+      room.hostSockets.delete(sid);
+      o.emit('host-status', { isHost: false, transferred: true, to: socketNames[t.id] || 'Guest' });
+    }
+    t.data.isHost = true; t.data.owner = true; t.data.coHost = false;
+    room.hostSockets.add(t.id);
+    room.hostId = t.id;
+    t.emit('host-claimed', { hostToken: token });
+    emitMemberCount(roomId);
   });
 
   socket.on('leave-room', (roomId) => {

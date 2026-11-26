@@ -81,7 +81,11 @@ export interface ToolbarProps {
   activeTemplate: string;
   onPickTemplate: (id: string) => void;
   // Host: the people in the room right now (names) and which entry is me
-  members?: { id: string; name: string; host: boolean }[];
+  members?: { id: string; name: string; host: boolean; coHost?: boolean }[];
+  // Only the real host (not a co-host) can share or hand over the host role.
+  canManageHosts?: boolean;
+  onSetCoHost?: (id: string, on: boolean) => void;
+  onTransferHost?: (id: string, name: string) => void;
   mySocketId?: string;
   // Type of the mark selected with the Select tool (a selected text shows color + text style)
   selectedKind?: string | null;
@@ -705,15 +709,25 @@ export default function Toolbar(p: ToolbarProps) {
                 {peopleOpen && (
                   <>
                     <div className="fixed inset-0 z-[1]" onClick={() => setPeopleOpen(false)} />
-                    <div className="cp-glass cp-solid cp-pop absolute right-0 top-full mt-2 z-[2] w-[220px] p-2 rounded-[16px]" style={{ transformOrigin: 'top right' }}>
+                    <div className="cp-glass cp-solid cp-pop absolute right-0 top-full mt-2 z-[2] w-[260px] p-2 rounded-[16px]" style={{ transformOrigin: 'top right' }}>
                       <p className="cp-label px-2 pt-1 pb-2">{t('In the room')}</p>
                       {(p.members ?? []).length === 0 && <p className="px-2 pb-2 text-[12px]" style={{ color: 'var(--cp-ink-2)' }}>{t('Only you for now')}</p>}
                       {(p.members ?? []).map(m => (
                         <div key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px]">
                           <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-semibold shrink-0" style={{ background: 'var(--cp-wash)' }}>{m.name.trim()[0]?.toUpperCase() || '?'}</span>
                           <span className="truncate flex-1" style={{ color: 'var(--cp-ink)' }}>{m.name}</span>
-                          {m.host ? <span title={t('Host')}>👑</span> : null}
+                          {m.host ? <span title={m.coHost ? t('Co-host') : t('Host')}>{m.coHost ? '🎓' : '👑'}</span> : null}
                           {m.id === p.mySocketId && <span className="text-[11px]" style={{ color: 'var(--cp-ink-3)' }}>{t('you')}</span>}
+                          {p.canManageHosts && m.id !== p.mySocketId && (!m.host || m.coHost) && (
+                            <span className="flex gap-1 shrink-0">
+                              <button onClick={() => p.onSetCoHost?.(m.id, !m.coHost)} className="cp-btn h-6 px-2 rounded-full text-[11px]"
+                                title={m.coHost ? t('Take back control') : t('Let them control this lesson (page, bars, playback, marks). You stay the host.')}>
+                                {m.coHost ? t('Take back') : t('Give control')}
+                              </button>
+                              <button onClick={() => p.onTransferHost?.(m.id, m.name)} className="cp-btn h-6 px-2 rounded-full text-[11px]"
+                                title={t('Hand this room over for good')}>{t('Hand over')}</button>
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>

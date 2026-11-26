@@ -548,7 +548,8 @@ export default function Home() {
   // Synced playback: the teacher's player state (students) and how to send it (teacher)
   const [playbackSync, setPlaybackSync] = useState<{ playing: boolean; t: number; tempo: number; on: boolean; received: number } | null>(null);
   // Host only: who is in the room right now (names), from the server
-  const [members, setMembers] = useState<{ id: string; name: string; host: boolean }[]>([]);
+  const [members, setMembers] = useState<{ id: string; name: string; host: boolean; coHost?: boolean }[]>([]);
+  const [isCoHost, setIsCoHost] = useState(false);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [nicknameModalDefault, setNicknameModalDefault] = useState('');
   const [pendingRoomId, setPendingRoomId] = useState<string | null>(null);
@@ -1032,7 +1033,17 @@ export default function Home() {
       setPersonColors(colors || {});
       setPersonNames(names || {});
     });
+    // Another host gave or took back control, or handed the room to someone else.
+    socket.on('host-status', ({ isHost: h, coHost, by, transferred, to }: { isHost: boolean; coHost?: boolean; by?: string; transferred?: boolean; to?: string }) => {
+      setIsHost(h);
+      setIsCoHost(!!coHost);
+      if (transferred) {
+        if (roomIdRef.current) { try { localStorage.removeItem(`unino_host_${roomIdRef.current}`); } catch {} }
+        addToast(tRef.current('You handed this room to {name}', { name: to || '' }));
+      } else addToast(h ? tRef.current('{name} gave you control of the lesson', { name: by || '' }) : tRef.current('The host took back control'));
+    });
     socket.on('host-claimed', ({ hostToken }: { hostToken: string }) => {
+      setIsCoHost(false);
       if (roomIdRef.current) {
         try { localStorage.setItem(`unino_host_${roomIdRef.current}`, hostToken); } catch {}
       }
@@ -1091,7 +1102,7 @@ export default function Home() {
       socket.off('raise-hand'); socket.off('lower-hand');
       socket.off('nickname-assigned'); socket.off('nickname-map');
       socket.off('member-joined'); socket.off('member-left'); socket.off('name-changed');
-      socket.off('host-claimed'); socket.off('person-colors'); socket.off('room-deleted'); socket.off('play-order'); socket.off('score-replaced');
+      socket.off('host-claimed'); socket.off('host-status'); socket.off('person-colors'); socket.off('room-deleted'); socket.off('play-order'); socket.off('score-replaced');
       socket.off('scroll-sync'); socket.off('room-members-count');
       socket.off('metronome-update');
       socket.off('chat-history'); socket.off('chat-message');
@@ -2027,6 +2038,13 @@ export default function Home() {
     compact: isNarrow,
     personColor: myPersonColor,
     members,
+    canManageHosts: isHost && !isCoHost,
+    onSetCoHost: (id: string, on: boolean) => socket.emit('set-cohost', { roomId, targetId: id, on }),
+    onTransferHost: (id: string, name: string) => {
+      if (window.confirm(t('Hand this room over to {name}? They become the host for good; this score leaves your My Scores.', { name }))) {
+        socket.emit('transfer-host', { roomId, targetId: id });
+      }
+    },
     mySocketId: socket.id,
     canPickPersonColor: colorMode === 'self' || isHost,
     onPickPersonColor: (c: string) => setPersonColor(myClientId, c),
