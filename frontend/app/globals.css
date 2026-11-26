@@ -98,9 +98,9 @@ body {
 
   /* ── Dark-mode text ── */
   --t:  #F5F5F0;
-  --t2: #8E8E8A;
-  --t3: #5E5E5A;
-  --t4: #3E3E3A;
+  --t2: #A8A8A3;
+  --t3: #8C8C87;   /* hints: still clearly readable on the dark panels (was #5E5E5A, too faint) */
+  --t4: #5A5A56;
 
   /* ── Dark-mode accent tints ── */
   --accent-fg: #8785FF;          /* use for text/icons on dark bg */
@@ -142,9 +142,9 @@ body {
   --border-md:      rgba(0,0,0,0.11);
 
   --t:  #1C1C1E;
-  --t2: #6C6C70;
-  --t3: #AEAEB2;
-  --t4: #D1D1D6;
+  --t2: #5F5F64;
+  --t3: #85858A;   /* hints: readable on white (was #AEAEB2, too faint) */
+  --t4: #C2C2C7;
 
   --accent-fg: #5E5CE6;
   --accent-bg: rgba(94,92,230,0.09);
@@ -441,7 +441,16 @@ body {
   --cp-wash: rgba(255, 255, 255, 0.07);
   --cp-on: rgba(255, 255, 255, 0.12);
   --cp-paper: #1d1b18;
+  --cp-live: #fb923c;
 }
+/* Dark mode: older parts of the tool panels use fixed grey/black text classes, which disappear on
+   dark glass. Inside the glass, map them onto the readable ink colours. */
+[data-theme="dark"] .cp-glass :is(.text-gray-900, .text-gray-800, .text-black, .text-gray-700) { color: var(--cp-ink) !important; }
+[data-theme="dark"] .cp-glass :is(.text-gray-600, .text-gray-500) { color: var(--cp-ink-2) !important; }
+[data-theme="dark"] .cp-glass :is(.text-gray-400, .text-gray-300) { color: var(--cp-ink-3) !important; }
+[data-theme="dark"] .cp-glass :is(.bg-gray-600, .bg-gray-700, .bg-gray-800) { background-color: var(--cp-ink) !important; }
+[data-theme="dark"] .cp-glass :is(.bg-white) { background-color: var(--cp-glass-strong) !important; color: var(--cp-ink) !important; }
+[data-theme="dark"] .cp-glass :is(.hover\:bg-black\/\[0\.05\], .hover\:bg-black\/\[0\.04\]):hover { background-color: var(--cp-wash) !important; }
 .cp-glass { position: relative; } /* utilities (fixed, absolute, hidden…) are a later layer, so they still win */
 .cp-glass {
   isolation: isolate;

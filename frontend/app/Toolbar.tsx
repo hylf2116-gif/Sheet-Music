@@ -80,6 +80,9 @@ export interface ToolbarProps {
   // Templates tool
   activeTemplate: string;
   onPickTemplate: (id: string) => void;
+  // Host: the people in the room right now (names) and which entry is me
+  members?: { id: string; name: string; host: boolean }[];
+  mySocketId?: string;
   // Type of the mark selected with the Select tool (a selected text shows color + text style)
   selectedKind?: string | null;
 }
@@ -174,6 +177,7 @@ export default function Toolbar(p: ToolbarProps) {
   const dockRef = useRef<HTMLDivElement>(null);
   const [pillAt, setPillAt] = useState<{ x: number; y: number } | null>(null);
   const [optsOpen, setOptsOpen] = useState(false);
+  const [peopleOpen, setPeopleOpen] = useState(false);
   const [optsTop, setOptsTop] = useState(120);
   useLayoutEffect(() => {
     const btn = dockRef.current?.querySelector<HTMLElement>(`[data-tool="${p.activeTool}"]`);
@@ -695,8 +699,31 @@ export default function Toolbar(p: ToolbarProps) {
           {p.isHost ? (
             <>
               {p.nickname && <button onClick={p.onRename} title={t('Change name')} className="cp-btn h-8 px-2.5 rounded-full text-[12px] max-w-[110px] truncate">👑 {p.nickname}</button>}
-              <span className="text-[11px] tabular-nums px-1" style={{ color: 'var(--cp-ink-3)' }} title={t('{n} in room', { n: p.participantCount })}>👥 {p.participantCount}</span>
-              <button onClick={p.onToggleScrollSync} aria-pressed={p.scrollSyncEnabled} title={p.scrollSyncEnabled ? t('Scroll sync on') : t('Scroll sync off')} className="cp-btn w-8 h-8 rounded-full"><Icon name="sync" size={14} /></button>
+              <div className="relative">
+                <button onClick={() => setPeopleOpen(o => !o)} aria-expanded={peopleOpen} title={t('Who is in the room')}
+                  className="cp-chip h-8 px-2.5">👥 {p.participantCount}</button>
+                {peopleOpen && (
+                  <>
+                    <div className="fixed inset-0 z-[1]" onClick={() => setPeopleOpen(false)} />
+                    <div className="cp-glass cp-solid cp-pop absolute right-0 top-full mt-2 z-[2] w-[220px] p-2 rounded-[16px]" style={{ transformOrigin: 'top right' }}>
+                      <p className="cp-label px-2 pt-1 pb-2">{t('In the room')}</p>
+                      {(p.members ?? []).length === 0 && <p className="px-2 pb-2 text-[12px]" style={{ color: 'var(--cp-ink-2)' }}>{t('Only you for now')}</p>}
+                      {(p.members ?? []).map(m => (
+                        <div key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px]">
+                          <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-semibold shrink-0" style={{ background: 'var(--cp-wash)' }}>{m.name.trim()[0]?.toUpperCase() || '?'}</span>
+                          <span className="truncate flex-1" style={{ color: 'var(--cp-ink)' }}>{m.name}</span>
+                          {m.host ? <span title={t('Host')}>👑</span> : null}
+                          {m.id === p.mySocketId && <span className="text-[11px]" style={{ color: 'var(--cp-ink-3)' }}>{t('you')}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button onClick={p.onToggleScrollSync} aria-pressed={p.scrollSyncEnabled}
+                title={t('Students see the same page and scroll position as you')} className="cp-chip h-8 px-2.5">
+                <Icon name="sync" size={14} /><span className="hidden md:inline">{p.scrollSyncEnabled ? t('Scroll sync on') : t('Scroll sync off')}</span>
+              </button>
               {p.raisedHands.length > 0 && (
                 <button onClick={p.onOpenHandsPanel} className="cp-chip h-8 px-2.5" style={{ color: '#b45309' }}>✋ {p.raisedHands.length}</button>
               )}

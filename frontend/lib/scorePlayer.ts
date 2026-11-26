@@ -115,7 +115,7 @@ export class ScorePlayer {
   private nextIndex = 0;
   private startT = 0;        // performance time (s, at the score's tempo) where playback started
   private startTime = 0;     // audio clock time when startT sounds
-  private voices: { nodes: AudioScheduledSourceNode[]; gain: GainNode; end: number }[] = [];
+  private voices: { nodes: AudioScheduledSourceNode[]; gain: GainNode; end: number; start?: number }[] = [];
   private lastBarIdx = -1;
   private run = 0;
   private musicStart = 0;    // audio clock time the first note sounds (after any count-in)
@@ -141,6 +141,8 @@ export class ScorePlayer {
   }
 
   private get speed() { return this.tempo / (this.perf.baseBpm || 80); }
+  /** Score seconds that pass per real second at a given tempo (for following another player). */
+  speedFor(bpm: number) { return bpm / (this.perf.baseBpm || 80); }
 
   setScore(score: ScoreModel) {
     const was = this.playing; const at = this.currentTime();
@@ -301,9 +303,27 @@ export class ScorePlayer {
   /** Change speed without a jump: keep the current place. */
   setTempo(bpm: number) {
     if (bpm === this.tempo) return;
-    if (!this.playing) { this.tempo = bpm; return; }
+    const ctx = this.ctx;
+    if (!this.playing || !ctx) { this.tempo = bpm; return; }
+    // Change speed in place: keep the current position and the notes already sounding; only the
+    // notes that haven't started yet are taken back and scheduled again at the new speed.
+    // (No restart, so no count-in and no jump.)
+    const now = ctx.currentTime;
     const t = this.currentTime();
-    this.stop(); this.tempo = bpm; void this.play(t);
+    this.tempo = bpm;
+    this.startT = t;
+    this.startTime = now;
+    this.musicStart = Math.min(this.musicStart, now);
+    for (const v of this.voices) {
+      if ((v.start ?? 0) > now + 0.005) {
+        try { v.gain.gain.cancelScheduledValues(now); v.gain.gain.setValueAtTime(0, now); v.nodes.forEach(o => o.stop(now)); } catch {}
+      }
+    }
+    this.voices = this.voices.filter(v => (v.start ?? 0) <= now + 0.005);
+    this.sounding = this.sounding.filter(v => v.from <= now + 0.005);
+    const idx = this.perf.notes.findIndex(n => n.t >= t - 1e-6);
+    this.nextIndex = idx < 0 ? this.perf.notes.length : idx;
+    this.schedule();
   }
 
   /** Loop written bars from..to (inclusive, 1-based), or null to stop looping. */
@@ -442,7 +462,7 @@ export class ScorePlayer {
     // the recordings carry their own natural vibrato: nothing is added on top
     gain.connect(this.dry!);
     gain.connect(this.wet!);
-    this.voices.push({ nodes, gain, end });
+    this.voices.push({ nodes, gain, end, start: at });
   }
 
   // Fallback when the recordings are not available: a simple synthesized tone.
@@ -460,7 +480,7 @@ export class ScorePlayer {
     gain.connect(this.dry!); gain.connect(this.wet!);
     const end = at + dur + 0.4;
     o.start(at); o.stop(end);
-    this.voices.push({ nodes: [o], gain, end });
+    this.voices.push({ nodes: [o], gain, end, start: at });
   }
 
   dispose() { this.stop(); void this.ctx?.close(); this.ctx = null; }

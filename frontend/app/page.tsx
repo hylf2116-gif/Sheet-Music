@@ -543,6 +543,10 @@ export default function Home() {
   // Nicknames
   const [nickname, setNickname] = useState('');
   const [nicknameMap, setNicknameMap] = useState<Record<string, string>>({});
+  // Synced playback: the teacher's player state (students) and how to send it (teacher)
+  const [playbackSync, setPlaybackSync] = useState<{ playing: boolean; t: number; tempo: number; on: boolean; received: number } | null>(null);
+  // Host only: who is in the room right now (names), from the server
+  const [members, setMembers] = useState<{ id: string; name: string; host: boolean }[]>([]);
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [nicknameModalDefault, setNicknameModalDefault] = useState('');
   const [pendingRoomId, setPendingRoomId] = useState<string | null>(null);
@@ -1039,6 +1043,8 @@ export default function Home() {
       if (followRef.current) setRemoteScrollPosition(ratio);
     });
     socket.on('room-members-count', (count: number) => setParticipantCount(count));
+    socket.on('playback-sync', (msg: { playing: boolean; t: number; tempo: number; on: boolean }) => setPlaybackSync({ ...msg, received: performance.now() }));
+    socket.on('room-members', (list: { id: string; name: string; host: boolean }[]) => setMembers(Array.isArray(list) ? list : []));
     socket.on('metronome-update', (state: MetronomeState) => setRemoteMetronomeState(state));
 
     socket.on('chat-history', (history: ChatMessage[]) => {
@@ -2005,6 +2011,8 @@ export default function Home() {
     pos: toolbarPos,
     compact: isNarrow,
     personColor: myPersonColor,
+    members,
+    mySocketId: socket.id,
     canPickPersonColor: colorMode === 'self' || isHost,
     onPickPersonColor: (c: string) => setPersonColor(myClientId, c),
     onPosChange: changeToolbarPos,
@@ -2365,7 +2373,9 @@ export default function Home() {
             pickedBar={pickedBar} onLoopBars={setLoopBars}
             showBarNumbers={omrPrefs.showNumbers}
             onToggleBarNumbers={() => setOmrPrefs({ ...omrPrefs, showNumbers: !omrPrefs.showNumbers })}
-            onOpenBars={() => setOmrOpen(true)} />
+            onOpenBars={() => setOmrOpen(true)}
+            syncIn={playbackSync}
+            onSyncOut={msg => { if (roomIdRef.current) socket.emit('playback-sync', { roomId: roomIdRef.current, ...msg }); }} />
         </div>
       )}
 

@@ -928,9 +928,15 @@ app.post('/omr/:roomId/ai-marks', async (req, res) => {
 function emitMemberCount(roomId) {
   const room = rooms[roomId];
   if (!room || !room.hostSockets || room.hostSockets.size === 0) return;
-  const count = io.sockets.adapter.rooms.get(roomId)?.size ?? 0;
+  const ids = [...(io.sockets.adapter.rooms.get(roomId) ?? [])];
+  const count = ids.length;
+  // Who is in the room (names only), for the host's people list
+  const members = ids.map((sid) => ({ id: sid, name: socketNames[sid] || 'Guest', host: room.hostSockets.has(sid) }));
   for (const hSid of room.hostSockets) {
-    if (io.sockets.sockets.get(hSid)) io.to(hSid).emit('room-members-count', count);
+    if (io.sockets.sockets.get(hSid)) {
+      io.to(hSid).emit('room-members-count', count);
+      io.to(hSid).emit('room-members', members);
+    }
   }
 }
 
@@ -1147,6 +1153,7 @@ io.on('connection', (socket) => {
     if (!room.personNames) room.personNames = {};
     room.personNames[clientIdForSocket] = nick;
     saveRooms();
+    emitMemberCount(roomId);   // the host's people list shows the new name
     if (room.colorMode && room.colorMode !== 'free') io.to(roomId).emit('person-colors', personColorsPayload(room));
   });
 
@@ -1296,6 +1303,16 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('bookmark-remove', { page });
   });
 
+  // Synced playback: the host's player state goes to everyone else in the room (they choose to follow)
+  socket.on('playback-sync', (msg) => {
+    if (!isHostSocket || !msg || typeof msg !== 'object') return;
+    const roomId = String(msg.roomId || '');
+    if (!rooms[roomId] || currentRoom !== roomId) return;
+    const t = Number(msg.t), tempo = Number(msg.tempo);
+    if (!Number.isFinite(t) || !Number.isFinite(tempo)) return;
+    socket.to(roomId).emit('playback-sync', { playing: !!msg.playing, t, tempo, on: msg.on !== false });
+  });
+
   socket.on('chat-message', ({ roomId, text, senderName }) => {
     const room = rooms[roomId];
     if (!room || typeof text !== 'string') return;
@@ -1311,7 +1328,8 @@ io.on('connection', (socket) => {
     };
     if (!room.messages) room.messages = [];
     room.messages.push(message);
-    if (room.messages.length > 100) room.messages.shift();
+    if (room.messages.length > 500) room.messages.shift();
+    saveRooms(); // chat is kept with the room (and its score), also across server restarts
     io.to(roomId).emit('chat-message', message);
   });
 

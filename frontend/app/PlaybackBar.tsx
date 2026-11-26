@@ -13,7 +13,9 @@ import { usePitch } from '../hooks/usePitch';
 // being played and keeps it on screen (turning pages). Each person plays on their own device.
 export interface AiMark { bar: number; kind: string; text: string }
 
-export default function PlaybackBar({ roomId, ready, version, partial, imported, barBoxCount, startBar, onBar, keepInView, onScore, onMarkOffNotes, isHost, onAiMarks, canPick, pickMode, onPickMode, pickedBar, onLoopBars, readingScore, showBarNumbers, onToggleBarNumbers, onOpenBars }: {
+export default function PlaybackBar({ roomId, ready, version, partial, imported, barBoxCount, startBar, onBar, keepInView, onScore, onMarkOffNotes, isHost, onAiMarks, canPick, pickMode, onPickMode, pickedBar, onLoopBars, readingScore, syncIn, onSyncOut, showBarNumbers, onToggleBarNumbers, onOpenBars }: {
+  syncIn?: { playing: boolean; t: number; tempo: number; on: boolean; received: number } | null; // teacher's player (students)
+  onSyncOut?: (msg: { playing: boolean; t: number; tempo: number; on: boolean }) => void;            // send mine (teacher)
   readingScore?: { page: number; total: number | null } | null; // recognition running: pages read so far
   showBarNumbers?: boolean;             // bar numbers drawn on the score
   onToggleBarNumbers?: () => void;
@@ -267,7 +269,7 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
     const bar = Math.max(1, Math.min(max, Math.round(n) || 1));
     setFromBar(bar); setResumeAt(null);
     const p = playerRef.current;
-    if (p && playing) { p.instrument = instrument; p.playFromBar(bar); }
+    if (p && playing) { p.instrument = instrument; p.playFromBar(bar); setTimeout(() => sendSyncRef.current(), 60); }
     else if (atBar != null) { setAtBar(null); onBar(null); }
   }
   /** Clicked on the score: play from that bar at once. Shift-click: loop from the start bar to it. */
@@ -298,6 +300,7 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
     p.tempo = tempo; p.instrument = instrument;
     p.playFromBar(bar);
     setPlaying(true);
+    setTimeout(() => sendSyncRef.current(), 60);
   }
   const pickRef = useRef(pickBar);
   // eslint-disable-next-line react-hooks/refs -- the pick effect always calls the latest version
@@ -315,8 +318,48 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
     if (!p) return;
     const at = p.timeAt(frac);
     if (progRef.current) progRef.current.style.width = `${(100 * frac).toFixed(2)}%`;
-    if (playing) { p.instrument = instrument; void p.play(at); } else setResumeAt(at);
+    if (playing) { p.instrument = instrument; void p.play(at); setTimeout(() => sendSyncRef.current(), 60); } else setResumeAt(at);
   }
+
+  // ── Synced playback ──
+  // Teacher: "Students hear it too" sends play / pause / position / speed to the room.
+  // Students: follow the teacher's playback (they can switch it off and play on their own).
+  const [shareSync, setShareSync] = useState(false);
+  const [followSync, setFollowSync] = useState(true);
+  const sendSync = (on = shareSync) => {
+    const p = playerRef.current;
+    if (!isHost || !onSyncOut || !p) return;
+    onSyncOut({ playing: p.playing, t: p.currentTime(), tempo: p.tempo, on });
+  };
+  const sendSyncRef = useRef(sendSync);
+  // eslint-disable-next-line react-hooks/refs -- the timers always call the latest version
+  sendSyncRef.current = sendSync;
+  // teacher: send on every change, and every 2 s while playing (keeps students in step)
+  useEffect(() => {
+    if (!isHost || !shareSync) return;
+    sendSyncRef.current(true);
+    if (!playing) return;
+    // the sounds may still be loading when Play is pressed: send again as soon as it really plays
+    const first = setInterval(() => { if (playerRef.current?.playing) { sendSyncRef.current(true); clearInterval(first); } }, 100);
+    const id = setInterval(() => sendSyncRef.current(true), 2000);
+    return () => { clearInterval(first); clearInterval(id); };
+  }, [isHost, shareSync, playing, tempo, fromBar]);
+  // student: follow
+  useEffect(() => {
+    const p = playerRef.current;
+    if (isHost || !syncIn || !followSync || !p || !score) return;
+    if (!syncIn.on) return;
+    const late = (performance.now() - syncIn.received) / 1000;
+    if (syncIn.tempo && Math.round(syncIn.tempo) !== tempo) setTempo(Math.round(syncIn.tempo)); // eslint-disable-line react-hooks/set-state-in-effect
+    if (syncIn.playing) {
+      // where the teacher is now: their position plus the time the message took, at their speed
+      const target = syncIn.t + late * p.speedFor(syncIn.tempo || p.tempo);
+      if (!p.playing || Math.abs(p.currentTime() - target) > 0.35) { p.tempo = Math.round(syncIn.tempo) || p.tempo; void p.play(target); }
+      setPlaying(true); // eslint-disable-line react-hooks/set-state-in-effect
+    } else if (p.playing) {
+      p.stop(); setPlaying(false); setResumeAt(syncIn.t); // eslint-disable-line react-hooks/set-state-in-effect
+    }
+  }, [syncIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Count-in before the music starts
   const [countIn, setCountIn] = useState(false);
@@ -552,9 +595,37 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
             </button>
           </div>
 
+          {/* Synced playback: the teacher shares it, students choose to follow */}
+          {isHost && onSyncOut && (
+            <button onClick={() => { const on = !shareSync; setShareSync(on); if (!on) sendSyncRef.current(false); }} aria-pressed={shareSync}
+              className="cp-chip q-bottom-extra" title={t('Students hear the same playback, in step with you')}>
+              <ChipIcon><path d="M3 12a4 4 0 0 1 4-4h2M21 12a4 4 0 0 1-4 4h-2M8 12h8" /><path d="M9 8a4 4 0 0 1 0 8M15 16a4 4 0 0 1 0-8" opacity=".0" /></ChipIcon>
+              <span className="hidden lg:inline">{shareSync ? t('Students hear it') : t('Only me')}</span>
+            </button>
+          )}
+          {!isHost && syncIn?.on && (
+            <button onClick={() => setFollowSync(f => !f)} aria-pressed={followSync} className="cp-chip q-bottom-extra"
+              title={t("Play along with the teacher's playback")}>
+              <ChipIcon><path d="M3 12a4 4 0 0 1 4-4h2M21 12a4 4 0 0 1-4 4h-2M8 12h8" /></ChipIcon>
+              <span className="hidden sm:inline">{followSync ? t('Following teacher') : t('On my own')}</span>
+            </button>
+          )}
+
           {/* Parts, right on the bar: tap a part to mute it, S to hear only it; ▾ opens sound + volume */}
           <div className="flex items-center gap-1 shrink-0 q-bottom-extra rounded-full p-[3px]" style={{ background: 'var(--cp-wash)' }}>
-            {(parts.length ? parts : [t('Score')]).map((name, i) => {
+            {parts.length > 2 && (
+              // many parts: one compact chip (a light per part); names, mute and solo are in the drawer
+              <button onClick={() => setShowMix(v => !v)} aria-expanded={showMix} className="h-7 px-2.5 rounded-full flex items-center gap-1.5 text-[12px] font-medium"
+                style={{ background: 'var(--cp-glass-strong)', color: 'var(--cp-ink)' }} title={t('Parts: sound, mute, solo, volume')}>
+                {parts.map((_, i) => (
+                  <span key={i} className="w-2 h-2 rounded-full transition-all" style={{
+                    background: activeParts.includes(i) && !partOff(i) ? 'var(--cp-live)' : partOff(i) ? 'transparent' : 'var(--cp-ink-3)',
+                    boxShadow: activeParts.includes(i) && !partOff(i) ? '0 0 8px var(--cp-live)' : partOff(i) ? 'inset 0 0 0 1px var(--cp-ink-3)' : 'none' }} />
+                ))}
+                <span className="hidden sm:inline">{t('{n} parts', { n: parts.length })}</span>
+              </button>
+            )}
+            {(parts.length > 2 ? [] : parts.length ? parts : [t('Score')]).map((name, i) => {
               const off = partOff(i), live = activeParts.includes(i) && !off;
               return (
                 <div key={i} className="flex items-center rounded-full transition-all" style={{ background: off ? 'transparent' : 'var(--cp-glass-strong)', boxShadow: off ? 'inset 0 0 0 1px var(--cp-hair)' : '0 1px 2px rgba(0,0,0,.08)' }}>
