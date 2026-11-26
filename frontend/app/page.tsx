@@ -2012,8 +2012,13 @@ export default function Home() {
   // Symbol em size (one staff height, as a fraction of page height): measured staff height
   // from measure detection when available, otherwise a default; scaled by S/M/L.
   function symbolEmForPage(page: number): number {
-    const staff = omrState?.pages?.find(p => p.page === page)?.staffHeight;
-    const base = typeof staff === 'number' && staff > 0.005 && staff < 0.2 ? staff : DEFAULT_SYMBOL_EM;
+    // One score uses one staff size, so use the middle value of all pages. A single page's reading can be
+    // badly off (cover pages, a big piano system), which made the same size look different per page.
+    const ok = (v: unknown): v is number => typeof v === 'number' && v > 0.005 && v < 0.2;
+    const all = (omrState?.pages ?? []).map(p => p.staffHeight).filter(ok).sort((a, b) => a - b);
+    const staff = all.length ? all[Math.floor(all.length / 2)] : undefined;
+    void page;
+    const base = staff ?? DEFAULT_SYMBOL_EM;
     return base * SYMBOL_SIZE_FACTOR[symbolSize];
   }
   function exitSymbolTool() { setActiveTool('select'); }
