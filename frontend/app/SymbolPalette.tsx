@@ -27,7 +27,10 @@ export function makeSymbolAnnotation(
   symbolId: SymbolId, page: number, cx: number, cy: number, em: number, asp: number, color: string,
 ) {
   const def = SYMBOL_DEFS[symbolId];
-  const h = Math.max((def.bh / 1000) * em * (SYMBOL_BOOST[symbolId] ?? 1), 0.004);
+  // Pages are shown at the same width, so size by width: em is meant for a normal portrait page
+  // (height ≈ 1.3 × width). A page with another shape (cropped strip, landscape, big scan margins)
+  // would otherwise get bigger or smaller symbols at the same S/M/L size.
+  const h = Math.max((def.bh / 1000) * em * (SYMBOL_BOOST[symbolId] ?? 1) * (1.3 / (asp || 1.3)), 0.004);
   const w = Math.max((def.bw / def.bh) * h * asp, 0.004);
   const x = Math.min(Math.max(cx - w / 2, 0), Math.max(1 - w, 0));
   const y = Math.min(Math.max(cy - h / 2, 0), Math.max(1 - h, 0));
