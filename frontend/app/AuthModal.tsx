@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Glyph from './Glyph';
 import { supabase } from '../lib/supabase';
 import { useT } from '../lib/i18n';
 
@@ -106,7 +107,7 @@ export default function AuthModal({ onClose }: { onClose: () => void }) {
 
         {success ? (
           <div className="text-center py-6">
-            <div className="text-2xl mb-3">📬</div>
+            <div className="mb-3"><Glyph name="mail" size={32} /></div>
             <p className="text-emerald-400 text-sm leading-relaxed">{t(success)}</p>
             <button onClick={() => switchTab('login')}
               className="mt-4 text-sm text-gray-400 hover:text-white transition-colors underline underline-offset-2">

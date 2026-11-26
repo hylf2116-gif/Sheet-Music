@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Glyph from './Glyph';
 import { useT, useLang } from '../lib/i18n';
 import { backendUrl } from '../lib/config';
 import { parseMusicXml, type ScoreModel } from '../lib/musicxml';
@@ -479,11 +480,11 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
             {/* On phones the bar only fits the essentials: Follow me and AI live here */}
             <div className="sm:hidden flex gap-2">
               <button onClick={() => { toggleFollow(); setShowMore(false); }} aria-pressed={following} disabled={!score} className="cp-chip cp-rose flex-1 justify-center">
-                🎤 {following ? t('Listening') : t('Follow me')}
+                <Glyph name="mic" size={14} /> {following ? t('Listening') : t('Follow me')}
               </button>
               {isHost && onAiMarks && (
                 <button onClick={() => { askAi(); setShowMore(false); }} disabled={!score || aiBusy} className="cp-chip flex-1 justify-center" style={{ boxShadow: 'inset 0 0 0 1px var(--cp-ink)' }}>
-                  ✦ {aiBusy ? t('Thinking…') : t('AI marks')}
+                  <Glyph name="spark" size={14} /> {aiBusy ? t('Thinking…') : t('AI marks')}
                 </button>
               )}
             </div>
@@ -502,7 +503,7 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
                 <button onClick={() => (imported ? removeScoreFile() : fileRef.current?.click())}
                   title={imported ? t('Stop using {name}; play the recognized score instead', { name: imported.name }) : t('Add a MusicXML or MIDI file: exact notes for demo or accompaniment')}
                   className="cp-chip w-full justify-center truncate">
-                  {imported ? `${imported.name} ✕` : t('Add MusicXML / MIDI file')}
+                  {imported ? <>{imported.name} <Glyph name="close" size={12} /></> : t('Add MusicXML / MIDI file')}
                 </button>
               </div>
             )}
@@ -668,7 +669,7 @@ export default function PlaybackBar({ roomId, ready, version, partial, imported,
           {isHost && onAiMarks && (
             <button onClick={askAi} disabled={!score || aiBusy} className="cp-chip q-bottom-extra hidden sm:flex" style={{ boxShadow: 'inset 0 0 0 1px var(--cp-ink)' }}
               title={aiMsg || t('AI suggests teaching marks for this score (fingering, shifts, bowing, hard spots)')}>
-              <span aria-hidden>✦</span><span className="hidden xl:inline">{aiBusy ? t('Thinking…') : t('AI marks')}</span>
+              <Glyph name="spark" size={14} /><span className="hidden xl:inline">{aiBusy ? t('Thinking…') : t('AI marks')}</span>
             </button>
           )}
           <button onClick={() => setShowMore(v => !v)} aria-pressed={showMore} title={t('Playback settings')} aria-label={t('Playback settings')}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useLayoutEffect, useRef, useState } from 'react';
+import Glyph from './Glyph';
 import type { SymbolId } from './symbols';
 import { SYMBOL_LABELS } from './symbols';
 import SymbolPopover, { SymbolIcon, type SymbolSize } from './SymbolPalette';
@@ -574,7 +575,7 @@ export default function Toolbar(p: ToolbarProps) {
                       }`}>
                       <Icon name={posIcons[opt]} size={14} />
                       <span>{t(posLabels[opt])}</span>
-                      {p.pos === opt && <span className="ml-auto text-indigo-400">✓</span>}
+                      {p.pos === opt && <span className="ml-auto text-indigo-400"><Glyph name="check" size={14} /></span>}
                     </button>
                   ))}
                 </>
@@ -616,10 +617,10 @@ export default function Toolbar(p: ToolbarProps) {
           {p.nickname && (
             <button onClick={p.onRename} title={t('Change name')}
               className="text-xs text-gray-500 rounded-md px-1.5 py-1 truncate min-w-0 max-w-[110px]">
-              {p.isHost ? '👑 ' : ''}{p.nickname}
+              {p.isHost ? <><Glyph name="crown" size={13} /> </> : ''}{p.nickname}
             </button>
           )}
-          <span className="text-[11px] text-gray-400 tabular-nums shrink-0">👥 {p.participantCount}</span>
+          <span className="text-[11px] text-gray-400 tabular-nums shrink-0"><Glyph name="people" size={13} /> {p.participantCount}</span>
           <div className="flex-1" />
           {p.isHost ? (
             <>
@@ -630,14 +631,14 @@ export default function Toolbar(p: ToolbarProps) {
               {p.raisedHands.length > 0 && (
                 <button onClick={p.onOpenHandsPanel}
                   className="text-xs font-semibold text-amber-700 bg-amber-100 rounded-full px-2 py-1 shrink-0">
-                  ✋{p.raisedHands.length}
+                  <Glyph name="hand" size={14} />{p.raisedHands.length}
                 </button>
               )}
             </>
           ) : (
             <button onClick={p.onToggleHand} aria-label={p.handRaised ? t('Lower hand') : t('Raise hand')}
               className={`h-9 px-2.5 rounded-lg text-sm shrink-0 ${p.handRaised ? 'bg-amber-100 text-amber-700' : 'text-gray-500'}`}>
-              ✋{p.handRaised ? ' ' + t('Lower') : ''}
+              <Glyph name="hand" size={14} />{p.handRaised ? ' ' + t('Lower') : ''}
             </button>
           )}
           <button data-tour="share" onClick={p.onCopyLink} aria-label={t('Copy share link')}
@@ -702,10 +703,10 @@ export default function Toolbar(p: ToolbarProps) {
           <span className="cp-sep w-px h-5 mx-1" />
           {p.isHost ? (
             <>
-              {p.nickname && <button onClick={p.onRename} title={t('Change name')} className="cp-btn h-8 px-2.5 rounded-full text-[12px] max-w-[110px] truncate">👑 {p.nickname}</button>}
+              {p.nickname && <button onClick={p.onRename} title={t('Change name')} className="cp-btn h-8 px-2.5 rounded-full text-[12px] max-w-[110px] truncate"><Glyph name="crown" size={13} /> {p.nickname}</button>}
               <div className="relative">
                 <button onClick={() => setPeopleOpen(o => !o)} aria-expanded={peopleOpen} title={t('Who is in the room')}
-                  className="cp-chip h-8 px-2.5">👥 {p.participantCount}</button>
+                  className="cp-chip h-8 px-2.5"><Glyph name="people" size={15} /> {p.participantCount}</button>
                 {peopleOpen && (
                   <>
                     <div className="fixed inset-0 z-[1]" onClick={() => setPeopleOpen(false)} />
@@ -716,7 +717,7 @@ export default function Toolbar(p: ToolbarProps) {
                         <div key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px]">
                           <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-semibold shrink-0" style={{ background: 'var(--cp-wash)' }}>{m.name.trim()[0]?.toUpperCase() || '?'}</span>
                           <span className="truncate flex-1" style={{ color: 'var(--cp-ink)' }}>{m.name}</span>
-                          {m.host ? <span title={m.coHost ? t('Co-host') : t('Host')}>{m.coHost ? '🎓' : '👑'}</span> : null}
+                          {m.host ? <span title={m.coHost ? t('Co-host') : t('Host')}>{m.coHost ? <Glyph name="cohost" size={14} /> : <Glyph name="crown" size={14} />}</span> : null}
                           {m.id === p.mySocketId && <span className="text-[11px]" style={{ color: 'var(--cp-ink-3)' }}>{t('you')}</span>}
                           {p.canManageHosts && m.id !== p.mySocketId && (!m.host || m.coHost) && (
                             <span className="flex gap-1 shrink-0">
@@ -739,12 +740,12 @@ export default function Toolbar(p: ToolbarProps) {
                 <Icon name="sync" size={14} /><span className="hidden md:inline">{p.scrollSyncEnabled ? t('Scroll sync on') : t('Scroll sync off')}</span>
               </button>
               {p.raisedHands.length > 0 && (
-                <button onClick={p.onOpenHandsPanel} className="cp-chip h-8 px-2.5" style={{ color: '#b45309' }}>✋ {p.raisedHands.length}</button>
+                <button onClick={p.onOpenHandsPanel} className="cp-chip h-8 px-2.5" style={{ color: '#b45309' }}><Glyph name="hand" size={14} /> {p.raisedHands.length}</button>
               )}
             </>
           ) : (
             <>
-              <button onClick={p.onToggleHand} aria-pressed={p.handRaised} className="cp-chip h-8">✋ {p.handRaised ? t('Lower') : t('Raise hand')}</button>
+              <button onClick={p.onToggleHand} aria-pressed={p.handRaised} className="cp-chip h-8"><Glyph name="hand" size={14} /> {p.handRaised ? t('Lower') : t('Raise hand')}</button>
               {p.nickname && <button onClick={p.onRename} title={t('Change name')} className="cp-btn h-8 px-2.5 rounded-full text-[12px] max-w-[110px] truncate">{p.nickname}</button>}
             </>
           )}
@@ -865,7 +866,7 @@ export default function Toolbar(p: ToolbarProps) {
           <div className="flex items-center gap-1 px-3 shrink-0">
             {p.isHost ? (
               <>
-                <span className="text-[11px] font-semibold text-amber-600 select-none px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-100 shrink-0">👑</span>
+                <span className="text-[11px] font-semibold text-amber-600 select-none px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-100 shrink-0"><Glyph name="crown" size={13} /></span>
                 {p.nickname && (
                   <button onClick={p.onRename} title={t('Change name')}
                     className="text-[11px] text-gray-500 hover:text-gray-800 hover:bg-black/[0.04] rounded-md px-1.5 py-0.5 transition-colors shrink-0 max-w-[90px] truncate">
@@ -882,7 +883,7 @@ export default function Toolbar(p: ToolbarProps) {
                 {p.raisedHands.length > 0 && (
                   <button onClick={p.onOpenHandsPanel}
                     className="text-[10px] font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-full px-1.5 py-0.5 select-none shrink-0 transition-colors">
-                    ✋{p.raisedHands.length}
+                    <Glyph name="hand" size={14} />{p.raisedHands.length}
                   </button>
                 )}
               </>
@@ -892,7 +893,7 @@ export default function Toolbar(p: ToolbarProps) {
                   className={`flex items-center gap-1 h-7 px-2 rounded-lg text-[11px] font-medium transition-colors shrink-0 ${
                     p.handRaised ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-black/[0.04] hover:text-gray-700'
                   }`}>
-                  ✋ {p.handRaised ? t('Lower') : t('Raise hand')}
+                  <Glyph name="hand" size={14} /> {p.handRaised ? t('Lower') : t('Raise hand')}
                 </button>
                 {p.nickname && (
                   <button onClick={p.onRename} title={t('Change name')}
@@ -1032,7 +1033,7 @@ export default function Toolbar(p: ToolbarProps) {
             {p.isHost ? (
               <>
                 <div className="flex items-center gap-2 px-2 py-1.5">
-                  <span className="text-sm">👑</span>
+                  <Glyph name="crown" size={15} />
                   <span className="text-xs font-semibold text-amber-600">{t('Host')}</span>
                 </div>
                 {p.nickname && (
@@ -1044,14 +1045,14 @@ export default function Toolbar(p: ToolbarProps) {
                 )}
                 {p.participantCount > 0 && (
                   <div className="flex items-center gap-2 px-2 py-1.5 text-gray-500">
-                    <span className="text-sm">👥</span>
+                    <Glyph name="people" size={15} />
                     <span className="text-xs font-medium">{t('{n} in room', { n: p.participantCount })}</span>
                   </div>
                 )}
                 {p.raisedHands.length > 0 && (
                   <button onClick={p.onOpenHandsPanel}
                     className="flex items-center gap-2 px-2 py-1.5 w-full rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors">
-                    <span className="text-sm">✋</span>
+                    <Glyph name="hand" size={15} />
                     <span className="text-xs font-medium">{t('{n} raised', { n: p.raisedHands.length })}</span>
                   </button>
                 )}
@@ -1072,7 +1073,7 @@ export default function Toolbar(p: ToolbarProps) {
                   className={`flex items-center gap-2.5 px-2 py-2 rounded-xl text-sm transition-colors ${
                     p.handRaised ? 'bg-amber-50 text-amber-700' : 'text-gray-500 hover:bg-black/[0.04]'
                   }`}>
-                  <span>✋</span>
+                  <Glyph name="hand" size={14} />
                   <span className="text-xs font-medium">{p.handRaised ? t('Lower hand') : t('Raise hand')}</span>
                 </button>
               </>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Glyph from './Glyph';
 import { useT } from '../lib/i18n';
 
 // One detected measure, in normalized page coordinates (0..1).
@@ -118,7 +119,7 @@ export default function OMRPanel({
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t)' }}>{t('Measures')}</span>
-        <button onClick={onClose} title={t('Close')} style={{ ...btn, padding: '2px 6px', background: 'transparent', color: 'var(--t3)' }}>✕</button>
+        <button onClick={onClose} title={t('Close')} style={{ ...btn, padding: '2px 6px', background: 'transparent', color: 'var(--t3)' }}><Glyph name="close" size={13} /></button>
       </div>
 
       <div style={{ fontSize: 12, color: status === 'error' ? '#ef4444' : 'var(--t2)', display: 'flex', alignItems: 'center', gap: 6 }}>

@@ -988,7 +988,7 @@ export default function Home() {
       setRaisedHands(prev => prev.includes(socketId) ? prev : [...prev, socketId]);
       if (socketId !== socket.id && isHostRef.current) {
         const displayName = raiserNick || nicknameMapRef.current[socketId] || 'Someone';
-        addToast(tRef.current('✋ {name} raised a hand', { name: displayName }), () => setShowHandsPanel(true));
+        addToast(tRef.current('{name} raised a hand', { name: displayName }), () => setShowHandsPanel(true));
         playChime();
         maybeNotify(tRef.current('Hand raised'), tRef.current('{name} wants to speak', { name: displayName }));
       }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Glyph from './Glyph';
 import { useT, type TFunc } from '../lib/i18n';
 import { updateRoomMeta, deleteRoomForEveryone, type LibraryRoom } from '../lib/library';
 import RowMenu from './RowMenu';
@@ -89,7 +90,7 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
           </div>
           {onTechniques && (
             <button onClick={onTechniques} className="ml-auto mr-2 cp-chip px-3 py-1.5 text-xs rounded-lg" style={{ color: 'var(--t)' }}>
-              〰 {t('Technique library')}
+              {t('Technique library')}
             </button>
           )}
           <button onClick={onClose} aria-label={t('Close')}
@@ -107,7 +108,7 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
               <button onClick={() => setOnlyStudent(undefined)}
                 className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
                 style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>
-                {onlyStudent || t('No student yet')} <span aria-hidden>✕</span>
+                {onlyStudent || t('No student yet')} <Glyph name="close" size={11} />
               </button>
             </div>
           )}
@@ -127,7 +128,7 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
           {groups.map(([student, list]) => (
             <section key={student || '_none'}>
               <h3 className="text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-2" style={{ color: 'var(--t3)' }}>
-                {student ? <><span aria-hidden>👤</span>{student}</> : t('No student yet')}
+                {student ? <><Glyph name="person" size={12} />{student}</> : t('No student yet')}
                 <span className="font-normal normal-case tracking-normal">· {list.length}</span>
               </h3>
               <div className="flex flex-col gap-2">
@@ -170,7 +171,7 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
                         title={pinned.includes(r.roomId) ? t('Unpin') : t('Pin to sidebar')}
                         className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 hover:bg-black/[0.06] text-base"
                         style={{ color: pinned.includes(r.roomId) ? '#f59e0b' : 'var(--t3)' }}>
-                        {pinned.includes(r.roomId) ? '★' : '☆'}
+                        {pinned.includes(r.roomId) ? <Glyph name="starFill" /> : <Glyph name="star" />}
                       </button>
                     )}
                     <RowMenu items={[

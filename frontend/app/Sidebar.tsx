@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import Glyph from './Glyph';
 import type { LibraryRoom } from '../lib/library';
 import { useT } from '../lib/i18n';
 
@@ -101,11 +102,11 @@ export default function Sidebar({ open, onToggle, myRooms, pinned, onOpenRoom, o
         <SectionTitle>{t('Pinned')}</SectionTitle>
         {pinnedRooms.length === 0 ? (
           <p className="px-2.5 pb-1 text-[11.5px] leading-snug" style={{ color: 'var(--t3)' }}>
-            {t('Pin the scores you use every week. Tap ☆ in My Scores.')}
+            {t('Pin the scores you use every week. Tap the star in My Scores.')}
           </p>
         ) : pinnedRooms.map(r => (
           <button key={r.roomId} onClick={() => onOpenRoom(r.roomId)} className={row} title={r.scoreName}>
-            <span className="text-amber-500 text-sm leading-none shrink-0">★</span>
+            <span className="text-amber-500 shrink-0"><Glyph name="starFill" size={14} /></span>
             <span className="flex-1 min-w-0">
               <span className="block text-[13px] font-medium truncate" style={{ color: 'var(--t)' }}>{r.scoreName}</span>
               {r.studentTag && <span className="block text-[11px] truncate" style={{ color: 'var(--t3)' }}>{r.studentTag}</span>}

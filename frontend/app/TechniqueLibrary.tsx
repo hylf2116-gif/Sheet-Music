@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Glyph from './Glyph';
 import { useT } from '../lib/i18n';
 import { backendUrl, resolvePdfUrl } from '../lib/config';
 import { getHostTokens } from '../lib/library';
@@ -128,10 +129,10 @@ function DemoRecorder({ item, onSaved }: { item: TechniqueItem; onSaved: (url: s
       <video ref={preview} muted playsInline className={state === 'rec' ? 'w-full rounded-lg' : 'hidden'} />
       <div className="flex items-center gap-2 flex-wrap">
         {state === 'idle' && <>
-          <button onClick={() => start(true)} className="cp-chip px-3 py-1.5 text-xs rounded-lg">● {t('Record video demo')}</button>
-          <button onClick={() => start(false)} className="cp-chip px-3 py-1.5 text-xs rounded-lg">🎙 {t('Audio only')}</button>
+          <button onClick={() => start(true)} className="cp-chip px-3 py-1.5 text-xs rounded-lg"><Glyph name="record" size={12} /> {t('Record video demo')}</button>
+          <button onClick={() => start(false)} className="cp-chip px-3 py-1.5 text-xs rounded-lg"><Glyph name="mic" size={13} /> {t('Audio only')}</button>
         </>}
-        {state === 'rec' && <button onClick={() => rec.current?.stop()} className="px-3 py-1.5 text-xs rounded-lg bg-red-600 text-white">■ {t('Stop and save')}</button>}
+        {state === 'rec' && <button onClick={() => rec.current?.stop()} className="px-3 py-1.5 text-xs rounded-lg bg-red-600 text-white"><Glyph name="stop" size={12} /> {t('Stop and save')}</button>}
         {state === 'saving' && <span className="text-xs" style={{ color: 'var(--t3)' }}>{t('Saving…')}</span>}
         {err && <span className="text-xs text-red-500">{err}</span>}
       </div>
@@ -186,7 +187,7 @@ export default function TechniqueLibrary({ onClose, onOpenAt }: {
             <h2 className="text-base font-semibold" style={{ color: 'var(--t)' }}>{t('Technique library')}</h2>
             <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>{t('Every place you marked this technique, from all lessons.')}</p>
           </div>
-          <button onClick={onClose} aria-label={t('Close')} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-black/[0.05]" style={{ color: 'var(--t3)' }}>✕</button>
+          <button onClick={onClose} aria-label={t('Close')} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-black/[0.05]" style={{ color: 'var(--t3)' }}><Glyph name="close" size={14} /></button>
         </div>
 
         <div className="px-5 pt-3 flex flex-wrap gap-2 shrink-0">

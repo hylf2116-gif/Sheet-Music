@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Glyph from './Glyph';
 import { useT } from '../lib/i18n';
 
 export interface ChatMessage {
@@ -87,7 +88,7 @@ export default function ChatPanel({ messages, mySocketId, onSend, onClose }: Pro
       <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-2">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-            <span className="text-3xl opacity-30">💬</span>
+            <span className="opacity-30"><Glyph name="chat" size={34} /></span>
             <p className="text-[11px] text-gray-600 leading-relaxed">
               {t('No messages yet.')}<br />{t('Say something!')}
             </p>
@@ -105,7 +106,7 @@ export default function ChatPanel({ messages, mySocketId, onSend, onClose }: Pro
                     <span className="text-[10px] font-semibold text-gray-500">{msg.senderName}</span>
                     {msg.isHost && (
                       <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full">
-                        👑 {t('Host')}
+                        <Glyph name="crown" size={12} /> {t('Host')}
                       </span>
                     )}
                   </div>

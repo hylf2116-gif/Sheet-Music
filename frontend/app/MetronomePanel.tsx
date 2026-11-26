@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Glyph from './Glyph';
 import { useT, useLang } from '../lib/i18n';
 import { uid } from '../lib/uid';
 
@@ -715,7 +716,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
           <button onClick={togglePlay}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
             style={{ background: isPlaying ? 'rgba(239,68,68,0.15)' : 'rgba(129,140,248,0.2)', color: isPlaying ? '#f87171' : '#a5b4fc' }}>
-            {isPlaying ? '⏹' : '▶'}
+            {isPlaying ? <Glyph name="stop" /> : <Glyph name="play" />}
           </button>
         )}
         <div className="w-2 h-2 rounded-full transition-all duration-75"
@@ -763,7 +764,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
               style={{ background: 'rgba(129,140,248,0.15)', color: '#a5b4fc' }}>⟳ {t('Synced')}</span>
           )}
           {timerRemaining && (
-            <span className="text-xs font-mono tabular-nums shrink-0" style={{ color: '#f59e0b' }}>⏱ {timerRemaining}</span>
+            <span className="text-xs font-mono tabular-nums shrink-0" style={{ color: '#f59e0b' }}><Glyph name="timer" size={12} /> {timerRemaining}</span>
           )}
         </div>
         <div className="flex items-center gap-0.5">
@@ -937,7 +938,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
               color: isPlaying ? '#f87171' : '#a5b4fc',
               border: isPlaying ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(129,140,248,0.3)',
             }}>
-            {isPlaying ? '⏹ ' + t('Stop') : '▶ ' + t('Start')}
+            {isPlaying ? <><Glyph name="stop" size={14} /> {t('Stop')}</> : <><Glyph name="play" size={14} /> {t('Start')}</>}
           </button>
           {isHost && (
             <button onClick={tap} className="flex-1 h-10 rounded-xl text-sm font-semibold select-none"
@@ -1056,7 +1057,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                 <button onClick={() => setMuted(v => !v)}
                   className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-sm"
                   style={{ background: muted ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)', color: muted ? '#f87171' : '#9ca3af' }}>
-                  {muted ? '🔇' : '🔊'}
+                  {muted ? <Glyph name="muted" /> : <Glyph name="sound" />}
                 </button>
                 <input type="range" min={0} max={1} step={0.05} value={volume}
                   onChange={e => { setVolume(+e.target.value); R.current.volume = +e.target.value; }}
@@ -1265,7 +1266,7 @@ export default function MetronomePanel({ isHost, remoteState, onUpdate, onClose 
                 </div>
               )}
               {timerRemaining && (
-                <p className="text-sm font-mono tabular-nums" style={{ color: '#f59e0b' }}>⏱ {timerRemaining} remaining</p>
+                <p className="text-sm font-mono tabular-nums" style={{ color: '#f59e0b' }}><Glyph name="timer" size={14} /> {timerRemaining} remaining</p>
               )}
             </div>
           )}

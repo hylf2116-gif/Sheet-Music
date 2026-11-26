@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import Glyph from './Glyph';
 import { useT } from '../lib/i18n';
 
 interface Props {
@@ -51,7 +52,7 @@ export default function RaisedHandsPanel({
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 10px 8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 14 }}>✋</span>
+          <Glyph name="hand" size={15} />
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t)' }}>
             {t('Raised hands')}
             {raisedHands.length > 0 && (
@@ -121,7 +122,7 @@ export default function RaisedHandsPanel({
             const isMe = socketId === mySocketId;
             return (
               <div key={socketId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px' }}>
-                <span style={{ fontSize: 13 }}>✋</span>
+                <Glyph name="hand" size={14} />
                 <span style={{ flex: 1, fontSize: 13, color: 'var(--t)', overflow: 'hidden',
                   textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {name}

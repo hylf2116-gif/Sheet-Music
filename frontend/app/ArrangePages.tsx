@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Glyph from './Glyph';
 import { PDFDocument } from 'pdf-lib';
 import { useT, type TFunc } from '../lib/i18n';
 import { backendUrl } from '../lib/config';
@@ -140,7 +141,7 @@ export default function ArrangePages({ pdfUrl, scoreName, numPages, playOrder, o
             </button>
           ))}
           <div className="flex-1" />
-          <button onClick={onClose} disabled={busy} aria-label={t('Close')} className="w-8 h-8 mb-2 rounded-lg flex items-center justify-center hover:bg-black/[0.05]" style={{ color: 'var(--t3)' }}>✕</button>
+          <button onClick={onClose} disabled={busy} aria-label={t('Close')} className="w-8 h-8 mb-2 rounded-lg flex items-center justify-center hover:bg-black/[0.05]" style={{ color: 'var(--t3)' }}><Glyph name="close" size={13} /></button>
         </div>
 
         {tab === 'pages' ? (
@@ -171,11 +172,11 @@ export default function ArrangePages({ pdfUrl, scoreName, numPages, playOrder, o
                       </span>
                       <div className="flex gap-1">
                         <button onClick={() => move(it.key, idx - 1)} disabled={idx === 0} aria-label={t('Move earlier')}
-                          className="w-7 h-7 rounded-md text-xs disabled:opacity-25 hover:bg-black/[0.06]" style={{ color: 'var(--t2)' }}>◀</button>
+                          className="w-7 h-7 rounded-md text-xs disabled:opacity-25 hover:bg-black/[0.06]" style={{ color: 'var(--t2)' }}><Glyph name="prev" size={14} /></button>
                         <button onClick={() => setItems(prev => prev.filter(x => x.key !== it.key))} aria-label={t('Remove page')}
-                          className="w-7 h-7 rounded-md text-xs hover:bg-red-500/10" style={{ color: '#ef4444' }}>✕</button>
+                          className="w-7 h-7 rounded-md text-xs hover:bg-red-500/10" style={{ color: '#ef4444' }}><Glyph name="close" size={13} /></button>
                         <button onClick={() => move(it.key, idx + 1)} disabled={idx === items.length - 1} aria-label={t('Move later')}
-                          className="w-7 h-7 rounded-md text-xs disabled:opacity-25 hover:bg-black/[0.06]" style={{ color: 'var(--t2)' }}>▶</button>
+                          className="w-7 h-7 rounded-md text-xs disabled:opacity-25 hover:bg-black/[0.06]" style={{ color: 'var(--t2)' }}><Glyph name="next" size={14} /></button>
                       </div>
                     </div>
                   );
