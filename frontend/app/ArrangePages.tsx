@@ -136,7 +136,7 @@ export default function ArrangePages({ pdfUrl, scoreName, numPages, playOrder, o
           {(['pages', 'order'] as const).map(k => (
             <button key={k} onClick={() => setTab(k)}
               className="px-3 pb-2.5 text-sm font-medium border-b-2 transition-colors"
-              style={{ borderColor: tab === k ? '#6366f1' : 'transparent', color: tab === k ? 'var(--t)' : 'var(--t3)' }}>
+              style={{ borderColor: tab === k ? 'var(--color-indigo-500)' : 'transparent', color: tab === k ? 'var(--t)' : 'var(--t3)' }}>
               {k === 'pages' ? t('Arrange pages') : t('Play order')}
             </button>
           ))}
@@ -256,7 +256,7 @@ function PlayOrderTab({ numPages, playOrder, onSet, t }: {
       {parsed.order && (
         <div className="flex flex-wrap gap-1.5">
           {parsed.order.map((p, i) => (
-            <span key={i} className="text-xs font-semibold px-2 py-1 rounded-md" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>{p + 1}</span>
+            <span key={i} className="text-xs font-semibold px-2 py-1 rounded-md" style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--color-indigo-500)' }}>{p + 1}</span>
           ))}
         </div>
       )}

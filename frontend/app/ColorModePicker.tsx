@@ -55,7 +55,7 @@ function Preview({ mode, active }: { mode: ColorMode; active: boolean }) {
         // crown: the host decides
         ? <path d="M50 19l1.5-8 3.5 3.5 3-5 3 5 3.5-3.5L66 19z" transform="translate(-4 0)" fill="#f59e0b" />
         // brush: everyone decides
-        : <g transform="translate(57 15)"><path d="M-4 5l7-9a1.8 1.8 0 0 1 2.6 2.4L-1.5 7z" fill="#6366f1" /><circle cx="-4.5" cy="6" r="2" fill="#6366f1" /></g>}
+        : <g transform="translate(57 15)"><path d="M-4 5l7-9a1.8 1.8 0 0 1 2.6 2.4L-1.5 7z" fill="var(--color-indigo-500)" /><circle cx="-4.5" cy="6" r="2" fill="var(--color-indigo-500)" /></g>}
     </svg>
   );
 }
@@ -80,12 +80,12 @@ export default function ColorModePicker({ value, onChange, compact = false }: {
               style={{
                 padding: compact ? '6px 2px' : '10px 4px 8px',
                 background: active ? 'rgba(99,102,241,0.10)' : 'transparent',
-                border: `1.5px solid ${active ? '#6366f1' : 'var(--border)'}`,
+                border: `1.5px solid ${active ? 'var(--color-indigo-500)' : 'var(--border)'}`,
                 boxShadow: active ? '0 0 0 3px rgba(99,102,241,0.12)' : 'none',
               }}>
               {!compact && <Preview mode={o.value} active={active} />}
               <span className={`${compact ? 'text-[11px]' : 'text-xs'} font-semibold leading-tight text-center`}
-                style={{ color: active ? '#6366f1' : 'var(--t2)' }}>
+                style={{ color: active ? 'var(--color-indigo-500)' : 'var(--t2)' }}>
                 {t(o.title)}
               </span>
             </button>

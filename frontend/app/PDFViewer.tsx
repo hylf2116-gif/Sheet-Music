@@ -1624,7 +1624,7 @@ export default function PDFViewer({
                       )}
                       {flash && (
                         <rect key={measureJump!.nonce} x={flash.x} y={flash.y} width={flash.w} height={flash.h}
-                          fill="rgba(99,102,241,0.16)" stroke="#6366f1" strokeWidth={2}
+                          fill="rgba(99,102,241,0.16)" stroke="var(--color-indigo-500)" strokeWidth={2}
                           vectorEffect="non-scaling-stroke"
                           style={{ pointerEvents: 'none', opacity: 0, animation: 'omrFlash 1.8s ease-in-out' }} />
                       )}
@@ -1678,7 +1678,7 @@ export default function PDFViewer({
                           <g key={i}>
                             <rect x={m.x} y={m.y} width={m.w} height={m.h}
                               fill={sel ? 'rgba(99,102,241,0.16)' : 'rgba(99,102,241,0.05)'}
-                              stroke={sel ? '#4f46e5' : '#818cf8'} strokeWidth={sel ? 2.5 : 1.2}
+                              stroke={sel ? 'var(--color-indigo-600)' : '#818cf8'} strokeWidth={sel ? 2.5 : 1.2}
                               strokeDasharray={sel ? undefined : '4 3'} vectorEffect="non-scaling-stroke"
                               style={{ cursor: barEdit.splitMode ? 'col-resize' : 'pointer' }}
                               onPointerDown={e => {
@@ -1692,7 +1692,7 @@ export default function PDFViewer({
                               style={{ pointerEvents: 'none' }}>{before + i + 1}</text>
                             {sel && !barEdit.splitMode && (['l', 'r'] as const).map(edge => (
                               <rect key={edge} x={(edge === 'l' ? m.x : m.x + m.w) - 0.006} y={m.y} width={0.012} height={m.h}
-                                fill="#4f46e5" opacity={0.85} rx={0.003} style={{ cursor: 'ew-resize' }}
+                                fill="var(--color-indigo-600)" opacity={0.85} rx={0.003} style={{ cursor: 'ew-resize' }}
                                 onPointerDown={e => startDrag(e, edge)} />
                             ))}
                           </g>
@@ -1732,7 +1732,7 @@ export default function PDFViewer({
                   position: 'absolute', left: `${m.x * 100}%`, top: `${m.y * 100}%`,
                   transform: 'translate(2px, -100%)', pointerEvents: 'none',
                   fontSize: 10, fontWeight: 700, lineHeight: '12px', padding: '0 3px', borderRadius: 3,
-                  color: '#4f46e5', background: 'rgba(255,255,255,0.85)',
+                  color: 'var(--color-indigo-600)', background: 'rgba(255,255,255,0.85)',
                 }}>
                   {m.n}
                 </div>
@@ -1760,7 +1760,7 @@ export default function PDFViewer({
                     fontSize: es.style.fontSize * textEdit.pageH, lineHeight: 1.15, padding: '0 4px',
                     fontWeight: es.style.bold ? 700 : 400, fontStyle: es.style.italic ? 'italic' : 'normal',
                     fontFamily: fontCss(es.style.font), color: es.color,
-                    background: 'rgba(255,255,255,0.9)', border: '1.5px solid #6366f1', borderRadius: 6, outline: 'none',
+                    background: 'rgba(255,255,255,0.9)', border: '1.5px solid var(--color-indigo-500)', borderRadius: 6, outline: 'none',
                     boxShadow: '0 4px 14px rgba(99,102,241,0.25)',
                   }}
                 />

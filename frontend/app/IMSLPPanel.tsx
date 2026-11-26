@@ -297,7 +297,7 @@ export default function IMSLPPanel({ clientId, colorMode, user, onImportSuccess,
                     </a>
                     {onUploadPdf && (
                       <button type="button" onClick={onUploadPdf}
-                        style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(99,102,241,0.18)', color: '#6366f1' }}>
+                        style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(99,102,241,0.18)', color: 'var(--color-indigo-500)' }}>
                         {t('2. Upload the PDF')}
                       </button>
                     )}

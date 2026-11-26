@@ -129,7 +129,7 @@ export default function NicknameModal({ defaultValue, dismissible = false, onCon
             disabled={!valid}
             style={{
               flex: 1, height: 36, borderRadius: 10, fontSize: 13, fontWeight: 600,
-              color: 'white', background: valid ? '#6366f1' : 'rgba(99,102,241,0.4)',
+              color: 'white', background: valid ? 'var(--color-indigo-500)' : 'rgba(99,102,241,0.4)',
               border: 'none', cursor: valid ? 'pointer' : 'not-allowed',
               transition: 'background 0.15s',
             }}

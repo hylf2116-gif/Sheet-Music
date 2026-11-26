@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useT } from '../lib/i18n';
 import LanguagePicker from './LanguagePicker';
+import AccentPicker from './AccentPicker';
 
 // Settings for visitors who are not signed in (signed-in users use Account → Settings).
 export default function GuestSettings() {
@@ -35,6 +36,8 @@ export default function GuestSettings() {
           <p className="text-sm font-semibold mb-3" style={{ color: 'var(--t)' }}>{t('Settings')}</p>
           <p className="text-xs font-medium mb-2" style={{ color: 'var(--t3)' }}>{t('Language')}</p>
           <LanguagePicker />
+          <p className="text-xs font-medium mt-4 mb-2" style={{ color: 'var(--t3)' }}>{t('Theme colour')}</p>
+          <AccentPicker />
         </div>
       )}
     </div>

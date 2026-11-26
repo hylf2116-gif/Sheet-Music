@@ -107,7 +107,7 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
               <span className="text-xs" style={{ color: 'var(--t3)' }}>{t('Showing')}</span>
               <button onClick={() => setOnlyStudent(undefined)}
                 className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
-                style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>
+                style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--color-indigo-500)' }}>
                 {onlyStudent || t('No student yet')} <Glyph name="close" size={11} />
               </button>
             </div>

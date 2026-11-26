@@ -22,7 +22,11 @@
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, var(--accent-wash, transparent), transparent 70%),
+    radial-gradient(900px 500px at 110% 110%, var(--accent-wash, transparent), transparent 70%),
+    var(--background);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
                Arial, sans-serif;

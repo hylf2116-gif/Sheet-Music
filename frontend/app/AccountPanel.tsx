@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { deleteSession, type RecentSession } from '../lib/sessions';
 import { useT, type TFunc } from '../lib/i18n';
 import LanguagePicker from './LanguagePicker';
+import AccentPicker from './AccentPicker';
 
 export type PanelTab = 'profile' | 'sessions' | 'settings';
 export type Theme = 'auto' | 'dark' | 'light';
@@ -258,6 +259,12 @@ function SettingsTab({ theme, onThemeChange, onSignOut }: {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Theme colour */}
+      <div>
+        <p className="text-xs font-medium text-gray-400 mb-2.5">{t('Theme colour')}</p>
+        <AccentPicker columns={8} />
       </div>
 
       <div className="h-px u-divider" />

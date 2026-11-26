@@ -91,14 +91,14 @@ export default function Tour({ steps, onClose, startAt = 0 }: {
         position: 'fixed', left, top, width: W, pointerEvents: 'auto', background: 'white', color: '#1c1c1e',
         borderRadius: 16, padding: '16px 16px 12px', boxShadow: '0 18px 50px rgba(0,0,0,0.25)', transition: 'all 0.25s ease',
       }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', letterSpacing: '0.06em' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-indigo-500)', letterSpacing: '0.06em' }}>
           {t('Step {n} of {total}', { n: step + 1, total: steps.length })}
         </div>
         <div style={{ fontSize: 16, fontWeight: 700, margin: '4px 0 6px' }}>{celebrate ? (s.doneText || t('Nice!')) : s.title}</div>
         {!celebrate && <div style={{ fontSize: 13, lineHeight: 1.55, color: '#4b5563' }}>{s.body}</div>}
         {s.waitFor && !celebrate && (
-          <div style={{ fontSize: 12, color: '#6366f1', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 4, background: '#6366f1', animation: 'pulse 1.2s ease-in-out infinite' }} />
+          <div style={{ fontSize: 12, color: 'var(--color-indigo-500)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 4, background: 'var(--color-indigo-500)', animation: 'pulse 1.2s ease-in-out infinite' }} />
             {t('Try it now. This moves on when you do.')}
           </div>
         )}
@@ -113,12 +113,12 @@ export default function Tour({ steps, onClose, startAt = 0 }: {
               </button>
             )}
             {s.action ? (
-              <button onClick={() => s.action!.run()} style={{ fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 10, border: 'none', background: '#6366f1', color: 'white', cursor: 'pointer' }}>
+              <button onClick={() => s.action!.run()} style={{ fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 10, border: 'none', background: 'var(--color-indigo-500)', color: 'white', cursor: 'pointer' }}>
                 {s.action.label}
               </button>
             ) : !s.waitFor && (
               <button onClick={() => (last ? onClose(true) : setStep(step + 1))} style={{
-                fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 10, border: 'none', background: '#6366f1', color: 'white', cursor: 'pointer',
+                fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 10, border: 'none', background: 'var(--color-indigo-500)', color: 'white', cursor: 'pointer',
               }}>
                 {last ? t('Done') : t('Next')}
               </button>

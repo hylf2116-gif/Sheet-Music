@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { applyAccent, savedAccent } from '../lib/accent';
 import { io } from 'socket.io-client';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
@@ -674,6 +675,7 @@ export default function Home() {
       ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
       : t;
     document.documentElement.setAttribute('data-theme', effective);
+    applyAccent(savedAccent()); // light and dark use different shades of the theme colour
   }
 
   useEffect(() => {
@@ -687,6 +689,7 @@ export default function Home() {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent) => {
       document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+      applyAccent(savedAccent());
     };
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
@@ -2422,8 +2425,8 @@ export default function Home() {
             <button onClick={() => { followRef.current = false; setFollowTeacher(false); }}
               title={t("Stop following the teacher's page and scroll")}
               className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full shadow-sm"
-              style={{ background: 'rgba(99,102,241,0.12)', color: '#4f46e5', border: '1px solid rgba(99,102,241,0.25)' }}>
-              <span style={{ width: 7, height: 7, borderRadius: 4, background: '#6366f1' }} />
+              style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--color-indigo-600)', border: '1px solid rgba(99,102,241,0.25)' }}>
+              <span style={{ width: 7, height: 7, borderRadius: 4, background: 'var(--color-indigo-500)' }} />
               {t('Following teacher')}
             </button>
           ) : (

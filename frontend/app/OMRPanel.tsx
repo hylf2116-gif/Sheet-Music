@@ -55,7 +55,7 @@ function Toggle({ label, hint, checked, onChange }: {
   return (
     <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', cursor: 'pointer' }}>
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
-        style={{ marginTop: 2, accentColor: '#6366f1' }} />
+        style={{ marginTop: 2, accentColor: 'var(--color-indigo-500)' }} />
       <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         <span style={{ fontSize: 12.5, color: 'var(--t)' }}>{t(label)}</span>
         {hint && <span style={{ fontSize: 11, color: 'var(--t3)' }}>{t(hint)}</span>}
@@ -134,7 +134,7 @@ export default function OMRPanel({
 
       {isHost && status === 'done' && onCheckBars && (
         <button onClick={() => { onCheckBars(); onClose(); }} style={{
-          ...btn, background: state?.confirmed ? 'transparent' : '#6366f1', color: state?.confirmed ? 'var(--t2)' : 'white',
+          ...btn, background: state?.confirmed ? 'transparent' : 'var(--color-indigo-500)', color: state?.confirmed ? 'var(--t2)' : 'white',
           border: state?.confirmed ? '1px solid var(--border-md)' : 'none',
         }}>
           {state?.confirmed ? t('Check bars again') : t('Check and confirm bars')}
@@ -143,7 +143,7 @@ export default function OMRPanel({
 
       {isHost && (status === 'none' || status === 'error' || status === 'done') && (
         <button onClick={onDetect} style={{
-          ...btn, background: done ? 'transparent' : '#6366f1', color: done ? 'var(--t3)' : 'white',
+          ...btn, background: done ? 'transparent' : 'var(--color-indigo-500)', color: done ? 'var(--t3)' : 'white',
           border: done ? '1px solid var(--border-md)' : 'none',
         }}>
           {done ? t('Detect again') : t('Detect measures')}
@@ -169,7 +169,7 @@ export default function OMRPanel({
             <input value={jumpText} onChange={e => { setJumpText(e.target.value); setJumpError(''); }}
               inputMode="numeric" placeholder={t('Go to bar…')} aria-label={t('Bar number')}
               style={{ flex: 1, minWidth: 0, fontSize: 12, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border-md)', background: 'transparent', color: 'var(--t)' }} />
-            <button type="submit" style={{ ...btn, background: '#6366f1', color: 'white' }}>{t('Go')}</button>
+            <button type="submit" style={{ ...btn, background: 'var(--color-indigo-500)', color: 'white' }}>{t('Go')}</button>
           </form>
           {jumpError && <div style={{ fontSize: 11, color: '#ef4444' }}>{jumpError}</div>}
           {isHost && <div style={{ fontSize: 11, color: 'var(--t3)' }}>{t('When you jump, everyone in the room jumps too.')}</div>}

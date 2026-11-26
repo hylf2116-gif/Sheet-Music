@@ -134,7 +134,7 @@ export default function LayersPopover({
                         {person.label}{person.isMe && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--t3)' }}>{t('you')}</span>}
                       </span>
                       {editable && (
-                        <span style={{ fontSize: 11, color: open ? '#6366f1' : 'var(--t3)', flexShrink: 0 }}>{open ? t('Done') : t('Change')}</span>
+                        <span style={{ fontSize: 11, color: open ? 'var(--color-indigo-500)' : 'var(--t3)', flexShrink: 0 }}>{open ? t('Done') : t('Change')}</span>
                       )}
                     </button>
                     {open && (
