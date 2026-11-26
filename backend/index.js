@@ -452,6 +452,56 @@ app.post('/room/:roomId/delete', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Technique library ─────────────────────────────────────────────────────
+// Every technique mark (vibrato, slides, …) across the scores this person hosts, so a teacher can
+// collect all earlier examples of one technique. Demo clips are kept per mark in room.clips.
+const TECHNIQUE_SYMBOLS = new Set(['vibrato', 'slideUp', 'slideDown']);
+const CLIPS_DIR = path.join(UPLOADS_DIR, 'clips');
+fs.mkdirSync(CLIPS_DIR, { recursive: true });
+
+app.post('/technique-library', async (req, res) => {
+  const { tokens, supabaseToken } = req.body || {};
+  let userId = null;
+  if (typeof supabaseToken === 'string') { try { userId = await verifySupabaseToken(supabaseToken); } catch {} }
+  const items = [];
+  for (const [roomId, room] of Object.entries(rooms)) {
+    const token = tokens && typeof tokens === 'object' ? tokens[roomId] : null;
+    const byToken = typeof token === 'string' && room.hostTokenHash && safeCompareHash(hashToken(token), room.hostTokenHash);
+    if (!byToken && !(userId && room.hostUserId === userId)) continue;
+    for (const sh of room.shapes || []) {
+      if (sh?.type !== 'symbol' || !TECHNIQUE_SYMBOLS.has(sh.symbolId)) continue;
+      items.push({
+        roomId, shapeId: sh.id, symbolId: sh.symbolId, page: sh.page ?? 0,
+        x: sh.x, y: sh.y, w: sh.w, h: sh.h,
+        scoreName: room.scoreName ?? 'Untitled Score', studentTag: room.studentTag ?? '',
+        pdfUrl: room.pdfUrl, lastActive: room.lastActive ?? room.createdAt ?? null,
+        clipUrl: room.clips?.[sh.id] ?? null,
+      });
+    }
+  }
+  items.sort((a, b) => String(b.lastActive).localeCompare(String(a.lastActive)));
+  res.json({ items });
+});
+
+// Save a short demo recording (video or audio) on one mark (host only). Body: the raw recording.
+app.post('/room/:roomId/clip/:shapeId', express.raw({ type: ['video/*', 'audio/*'], limit: '40mb' }), async (req, res) => {
+  const room = rooms[req.params.roomId];
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  if (!(await requestIsHost(room, req.get('x-host-token'), req.get('x-supabase-token')))) return res.status(403).json({ error: 'Only the host can add a demo.' });
+  const shapeId = String(req.params.shapeId);
+  if (!(room.shapes || []).some((s) => s.id === shapeId)) return res.status(404).json({ error: 'Mark not found' });
+  if (!Buffer.isBuffer(req.body) || req.body.length < 100) return res.status(400).json({ error: 'Empty recording' });
+  const ext = (req.get('content-type') || '').includes('mp4') ? 'mp4' : 'webm';
+  const name = `${crypto.randomBytes(12).toString('hex')}.${ext}`;
+  fs.writeFileSync(path.join(CLIPS_DIR, name), req.body);
+  room.clips = room.clips || {};
+  const old = room.clips[shapeId];
+  if (old) { try { fs.unlinkSync(path.join(CLIPS_DIR, path.basename(old))); } catch {} }
+  room.clips[shapeId] = `/uploads/clips/${name}`;
+  saveRooms();
+  res.json({ clipUrl: room.clips[shapeId] });
+});
+
 function removePdfIfUnused(pdf) {
   const stillUsed = Object.values(rooms).some((r) => roomPdfFile(r)?.stem === pdf.stem);
   if (stillUsed) return;

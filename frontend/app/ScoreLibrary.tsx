@@ -7,7 +7,7 @@ import RowMenu from './RowMenu';
 
 // "My Scores": every score you host, grouped by student. Reopening a score returns to the same room,
 // with all annotations from earlier lessons.
-export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, onRoomDeleted, pinned = [], onTogglePin, student }: {
+export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, onRoomDeleted, pinned = [], onTogglePin, student, onTechniques }: {
   rooms: LibraryRoom[];
   onRoomsChange: (rooms: LibraryRoom[]) => void;
   onOpen: (roomId: string) => void;
@@ -17,6 +17,7 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
   onTogglePin?: (roomId: string) => void;
   // Show only one student's scores ('' = scores without a student); undefined = all
   student?: string;
+  onTechniques?: () => void;
 }) {
   const t = useT();
   const [query, setQuery] = useState('');
@@ -86,6 +87,11 @@ export default function ScoreLibrary({ rooms, onRoomsChange, onOpen, onClose, on
             <h2 className="text-base font-semibold" style={{ color: 'var(--t)' }}>{t('My Scores')}</h2>
             <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>{t('Scores you teach from. Annotations stay from lesson to lesson.')}</p>
           </div>
+          {onTechniques && (
+            <button onClick={onTechniques} className="ml-auto mr-2 cp-chip px-3 py-1.5 text-xs rounded-lg" style={{ color: 'var(--t)' }}>
+              〰 {t('Technique library')}
+            </button>
+          )}
           <button onClick={onClose} aria-label={t('Close')}
             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-black/[0.05]" style={{ color: 'var(--t3)' }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" style={{ width: 14, height: 14 }}><path d="M18 6 6 18M6 6l12 12" /></svg>

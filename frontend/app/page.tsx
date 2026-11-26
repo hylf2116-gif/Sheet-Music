@@ -18,6 +18,7 @@ import RaisedHandsPanel from './RaisedHandsPanel';
 import { upsertSession, fetchRecentSessions, deleteSession, type RecentSession } from '../lib/sessions';
 import { fetchMyRooms, hasHostToken, deleteRoomForEveryone, loadPinned, savePinned, type LibraryRoom } from '../lib/library';
 import ScoreLibrary from './ScoreLibrary';
+import TechniqueLibrary from './TechniqueLibrary';
 import RowMenu from './RowMenu';
 import ArrangePages from './ArrangePages';
 import AccountPanel, { type PanelTab, type Theme } from './AccountPanel';
@@ -358,6 +359,7 @@ export default function Home() {
   const [showAllSessions, setShowAllSessions] = useState(false);
   // My Scores: rooms this person hosts (from this browser's host tokens and their account).
   const [myRooms, setMyRooms] = useState<LibraryRoom[]>([]);
+  const [showTechniques, setShowTechniques] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
   const [libraryStudent, setLibraryStudent] = useState<string | undefined>(undefined);
   function openLibrary(student?: string) { setLibraryStudent(student); setShowLibrary(true); }
@@ -1105,7 +1107,7 @@ export default function Home() {
     return firstName || user?.email?.split('@')[0] || '';
   }
 
-  async function joinRoom(rid: string) {
+  async function joinRoom(rid: string, atPage?: number) {
     const match = rid.match(/room=([a-f0-9-]{36})/);
     const cleanId = match ? match[1] : rid.trim();
     setLoading(true);
@@ -1116,7 +1118,7 @@ export default function Home() {
       const sn = data.scoreName || 'Untitled Score';
       setScoreName(sn);
       setPdfUrl(resolvePdfUrl(data.pdfUrl));
-      setCurrentPage(data.currentPage ?? 0);
+      setCurrentPage(atPage ?? data.currentPage ?? 0);
       setImslpSource(data.imslpSource ?? null);
       setRoomId(cleanId);
       roomIdRef.current = cleanId;
@@ -1974,6 +1976,14 @@ export default function Home() {
             pinned={pinned}
             onTogglePin={togglePin}
             student={libraryStudent}
+            onTechniques={() => setShowTechniques(true)}
+          />
+        )}
+
+        {showTechniques && (
+          <TechniqueLibrary
+            onClose={() => setShowTechniques(false)}
+            onOpenAt={(rid, pg) => { setShowTechniques(false); setShowLibrary(false); joinRoom(rid, pg); }}
           />
         )}
 
